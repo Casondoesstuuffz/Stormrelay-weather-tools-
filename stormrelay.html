@@ -1,0 +1,1340 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <!-- FIX #8: Content Security Policy -->
+  <meta http-equiv="Content-Security-Policy" content="
+    default-src 'self';
+    script-src 'self' 'unsafe-inline' cdn.jsdelivr.net;
+    style-src 'self' 'unsafe-inline' cdn.jsdelivr.net fonts.googleapis.com;
+    font-src fonts.gstatic.com;
+    connect-src *.supabase.co wss://*.supabase.co;
+    img-src * data: blob:;
+    media-src blob:;
+  ">
+  <title>StormRelay — Weather Ops</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.min.css"/>
+  <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;500;600;700;800;900&family=Share+Tech+Mono&family=Barlow:wght@300;400;500;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg:#07090e;--surf:#0c1018;--panel:#111620;--panel2:#17202e;
+      --border:#1c2535;--border2:#273347;--amber:#f59e0b;--amber2:#fbbf24;
+      --amberDim:#92400e;--cyan:#22d3ee;--cyanDim:#0891b2;--red:#ef4444;
+      --green:#22c55e;--purple:#a78bfa;--text:#dce8f5;--text2:#7a91a8;--text3:#3a4f64;
+      --mono:'Share Tech Mono',monospace;--disp:'Barlow Condensed',sans-serif;--body:'Barlow',sans-serif;
+    }
+    *,*::before,*::after{margin:0;padding:0;box-sizing:border-box;}
+    html{height:100%;height:-webkit-fill-available;}
+    body{height:100%;height:-webkit-fill-available;background:var(--bg);color:var(--text);font-family:var(--body);overflow:hidden;display:flex;flex-direction:column;}
+
+    /* ── TOPBAR ── */
+    #topbar{height:50px;flex-shrink:0;display:flex;align-items:center;padding:0 10px;gap:8px;background:var(--surf);border-bottom:1px solid var(--border);z-index:900;}
+    .logo{font-family:var(--disp);font-size:18px;font-weight:900;letter-spacing:3px;text-transform:uppercase;color:var(--amber);display:flex;align-items:center;gap:8px;flex-shrink:0;}
+    .live-dot{width:8px;height:8px;border-radius:50%;background:var(--red);animation:livepulse 1.8s ease-in-out infinite;}
+    @keyframes livepulse{0%,100%{opacity:1;box-shadow:0 0 0 0 rgba(239,68,68,.5)}50%{opacity:.5;box-shadow:0 0 0 4px rgba(239,68,68,0)}}
+    .tabs{display:flex;gap:3px;background:var(--panel);border-radius:6px;padding:3px;border:1px solid var(--border);flex-shrink:0;}
+    .tab{font-family:var(--disp);font-size:11px;font-weight:800;letter-spacing:1px;text-transform:uppercase;padding:5px 14px;border-radius:4px;border:none;cursor:pointer;background:transparent;color:var(--text2);transition:all .15s;}
+    .tab.on{background:var(--amber);color:#000;}
+    .tab:hover:not(.on){background:var(--border2);color:var(--text);}
+    #conn-badge{margin-left:auto;display:flex;align-items:center;gap:6px;font-family:var(--mono);font-size:10px;color:var(--text2);flex-shrink:0;}
+    #conn-dot{width:7px;height:7px;border-radius:50%;background:var(--text3);transition:background .3s;}
+    #conn-dot.live{background:var(--green);box-shadow:0 0 5px var(--green);}
+    #conn-dot.error{background:var(--red);}
+    .tb-btn{font-family:var(--mono);font-size:10px;cursor:pointer;padding:3px 8px;border-radius:3px;transition:all .15s;flex-shrink:0;background:transparent;}
+    #user-badge{display:none;align-items:center;gap:6px;font-family:var(--mono);font-size:10px;color:var(--text2);flex-shrink:0;}
+    #user-badge .u-name{color:var(--text);font-weight:700;}
+    #user-badge .u-role{font-size:9px;padding:1px 5px;border-radius:2px;font-weight:700;}
+    .role-admin{background:var(--red);color:#fff;}
+    .role-sender{background:var(--amber);color:#000;}
+    .role-deleter{background:var(--purple);color:#fff;}
+    .role-viewer{background:var(--panel2);color:var(--text2);border:1px solid var(--border2);}
+    #admin-btn{display:none;cursor:pointer;color:var(--red);padding:2px 6px;border:1px solid rgba(239,68,68,.4);border-radius:3px;font-size:10px;transition:all .12s;}
+    #admin-btn:hover{background:rgba(239,68,68,.1);}
+    #signout-btn{cursor:pointer;color:var(--text3);transition:color .12s;font-size:12px;}
+    #signout-btn:hover{color:var(--red);}
+    #auth-btn{color:var(--text2);border:1px solid var(--border2);}
+    #auth-btn:hover{border-color:var(--amber);color:var(--amber);}
+    #calls-btn{color:var(--text2);border:1px solid var(--border2);}
+    #calls-btn:hover{border-color:var(--cyan);color:var(--cyan);}
+    #calls-btn.active{border-color:var(--cyan);color:var(--cyan);background:rgba(34,211,238,.08);}
+
+    /* ── LAYOUT ── */
+    #app{display:flex;flex:1;min-height:0;}
+    .view{display:none;width:100%;min-height:0;}
+    .view.on{display:flex;}
+    #sv{flex-direction:row;overflow:hidden;}
+    #rv{flex-direction:row-reverse;overflow:hidden;}
+
+    /* ── SEND PANEL ── */
+    #sf{width:320px;min-width:260px;min-height:0;background:var(--surf);border-right:1px solid var(--border);display:flex;flex-direction:column;flex-shrink:0;overflow:hidden;}
+    .ph{padding:10px 14px;border-bottom:1px solid var(--border);font-family:var(--disp);font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--text2);display:flex;align-items:center;gap:8px;flex-shrink:0;}
+    .ph .acc{color:var(--amber);}
+    .fscroll{flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;touch-action:pan-y;padding:12px 12px 40px;display:flex;flex-direction:column;gap:12px;}
+    .fscroll::-webkit-scrollbar{width:3px}.fscroll::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px}
+    .fg{display:flex;flex-direction:column;gap:4px;}
+    .fl{font-family:var(--disp);font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--text2);}
+    .fi{background:var(--panel);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--body);font-size:14px;padding:7px 10px;outline:none;transition:border-color .15s;width:100%;}
+    .fi:focus{border-color:var(--amber);}.fi::placeholder{color:var(--text3);}
+    textarea.fi{resize:vertical;min-height:60px;line-height:1.4;}
+    .sevgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:4px;}
+    .sb{padding:5px 2px;border-radius:4px;border:1px solid var(--border);background:var(--panel);color:var(--text2);font-family:var(--disp);font-size:10px;font-weight:700;cursor:pointer;text-align:center;transition:all .12s;white-space:nowrap;}
+    .sb:hover:not(.on){border-color:var(--border2);color:var(--text);}.sb.on{border-color:transparent;}
+    .locdisp{font-family:var(--mono);font-size:11px;color:var(--cyan);background:var(--panel);border:1px solid var(--border);border-radius:5px;padding:7px 10px;min-height:32px;display:flex;align-items:center;}
+    .locdisp.empty{color:var(--text3);font-size:11px;font-family:var(--body);}
+    .brow{display:flex;gap:4px;}
+    .smb{flex:1;padding:5px 3px;border-radius:4px;border:1px solid var(--border);background:var(--panel);color:var(--text2);font-family:var(--disp);font-size:10px;font-weight:700;cursor:pointer;text-align:center;transition:all .12s;}
+    .smb:hover{border-color:var(--border2);color:var(--text);}
+    .smb.cyan-on{border-color:var(--cyan);color:var(--cyan);background:rgba(34,211,238,.06);}
+    .smb.red-on{border-color:var(--red);color:var(--red);background:rgba(239,68,68,.06);}
+    .trackst{font-family:var(--mono);font-size:11px;color:var(--text3);padding:2px 0;}
+    .trackst.has{color:var(--amber);}
+    .phzn{border:1px dashed var(--border2);border-radius:5px;padding:12px;text-align:center;cursor:pointer;transition:all .15s;position:relative;overflow:hidden;}
+    .phzn:hover{border-color:var(--amberDim);background:rgba(245,158,11,.03);}
+    .phzn input{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;}
+    .phzn-lbl{font-family:var(--disp);font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--text3);}
+    .phprev{max-width:100%;max-height:100px;object-fit:cover;width:100%;border-radius:4px;margin-top:6px;display:none;}
+    .progbar{height:3px;background:var(--border);border-radius:2px;overflow:hidden;margin-top:4px;display:none;}
+    .progfill{height:100%;background:var(--amber);width:0%;transition:width .3s;}
+    #txbtn{width:100%;padding:10px;background:var(--amber);border:none;border-radius:5px;color:#000;font-family:var(--disp);font-size:13px;font-weight:900;letter-spacing:2px;text-transform:uppercase;cursor:pointer;transition:all .15s;}
+    #txbtn:hover{background:var(--amber2);}#txbtn:disabled{opacity:.45;cursor:not-allowed;}
+    #txmsg{font-family:var(--mono);font-size:11px;text-align:center;min-height:14px;}
+    #smp{flex:1;position:relative;overflow:hidden;}
+    #smap{position:absolute;inset:0;}
+    .moverlay{position:absolute;bottom:16px;left:50%;transform:translateX(-50%);z-index:500;background:rgba(7,9,14,.9);border:1px solid var(--red);border-radius:4px;padding:7px 18px;font-family:var(--mono);font-size:11px;color:var(--red);display:none;pointer-events:none;white-space:nowrap;}
+    .moverlay.show{display:block;}.moverlay.cyan{border-color:var(--cyan);color:var(--cyan);}
+
+    /* ── RECEIVE PANEL ── */
+    #rfp{width:340px;min-width:260px;min-height:0;background:var(--surf);border-left:1px solid var(--border);display:flex;flex-direction:column;flex-shrink:0;overflow:hidden;}
+    .fhead{padding:10px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-shrink:0;}
+    .fhead-title{font-family:var(--disp);font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--text2);}
+    #rcount{font-family:var(--mono);font-size:11px;color:var(--amber);}
+    #feedlist{flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;touch-action:pan-y;padding:8px;display:flex;flex-direction:column;gap:7px;}
+    #feedlist::-webkit-scrollbar{width:3px}#feedlist::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px}
+    #ch-filter{display:flex;gap:4px;padding:6px 8px;border-bottom:1px solid var(--border);overflow-x:auto;flex-shrink:0;}
+    #ch-filter::-webkit-scrollbar{display:none;}
+    .cf-btn{flex-shrink:0;padding:3px 10px;border-radius:4px;border:1px solid var(--border2);background:transparent;color:var(--text2);font-family:var(--mono);font-size:9px;cursor:pointer;transition:all .12s;}
+    .cf-btn:hover{border-color:var(--cyan);color:var(--text);}
+    .cf-btn.on{border-color:var(--cyan);background:rgba(34,211,238,.12);color:var(--cyan);}
+    .card{background:var(--panel);border:1px solid var(--border);border-radius:6px;overflow:hidden;cursor:pointer;transition:all .15s;animation:slidein .22s ease-out;position:relative;}
+    @keyframes slidein{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:translateY(0)}}
+    .card:hover{border-color:var(--border2);}
+    .card.del-mode{border-color:var(--red);background:rgba(239,68,68,.05);}
+    .card-del-bar{display:none;align-items:center;justify-content:space-between;padding:7px 10px;background:rgba(239,68,68,.1);border-top:1px solid rgba(239,68,68,.3);}
+    .card.del-mode .card-del-bar{display:flex;}
+    .card-del-msg{font-family:var(--mono);font-size:10px;color:var(--red);}
+    .card-del-btns{display:flex;gap:6px;}
+    .card-del-confirm{background:var(--red);border:none;border-radius:4px;color:#fff;font-family:var(--disp);font-size:11px;font-weight:900;letter-spacing:1px;padding:4px 12px;cursor:pointer;}
+    .card-del-cancel{background:transparent;border:1px solid var(--border2);border-radius:4px;color:var(--text2);font-family:var(--disp);font-size:11px;font-weight:700;padding:4px 10px;cursor:pointer;}
+    .ctop{padding:8px 10px;display:flex;align-items:center;gap:8px;}
+    .sevbadge{font-family:var(--disp);font-size:10px;font-weight:900;letter-spacing:.8px;padding:3px 7px;border-radius:3px;white-space:nowrap;flex-shrink:0;}
+    .cmeta{flex:1;min-width:0;}
+    .chandle{font-family:var(--disp);font-size:13px;font-weight:800;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+    .ctime{font-family:var(--mono);font-size:10px;color:var(--text3);margin-top:1px;}
+    .cicons{display:flex;gap:3px;flex-shrink:0;}
+    .ipill{font-size:10px;padding:2px 5px;border-radius:3px;background:var(--panel2);color:var(--text3);border:1px solid var(--border);}
+    .cbody{padding:0 10px 9px;}
+    .cnotes{font-size:13px;color:var(--text2);line-height:1.4;}
+    .ccoords{font-family:var(--mono);font-size:10px;color:var(--cyanDim);margin-top:4px;}
+    .cphoto{width:100%;max-height:150px;object-fit:cover;display:block;border-top:1px solid var(--border);}
+    .emptyfeed{display:flex;flex-direction:column;align-items:center;justify-content:center;height:160px;gap:10px;color:var(--text3);}
+    .emptyfeed .elabel{font-family:var(--disp);font-size:11px;font-weight:700;letter-spacing:2px;text-transform:uppercase;}
+    #rmp{flex:1;position:relative;overflow:hidden;}
+    #rmap{position:absolute;inset:0;}
+    .leaflet-tile-pane{filter:brightness(.72) saturate(.75);}
+
+    /* ── MODALS ── */
+    .modal-overlay{position:fixed;inset:0;z-index:2000;background:rgba(7,9,14,.9);display:none;align-items:center;justify-content:center;backdrop-filter:blur(6px);}
+    .modal-overlay.show{display:flex;}
+    .modal-box{background:var(--panel);border:1px solid var(--border2);border-radius:10px;padding:26px;width:310px;display:flex;flex-direction:column;gap:13px;align-items:center;box-shadow:0 0 60px rgba(0,0,0,.6);}
+    .modal-title{font-family:var(--disp);font-size:17px;font-weight:900;letter-spacing:2px;text-transform:uppercase;text-align:center;}
+    .modal-sub{font-family:var(--mono);font-size:10px;color:var(--text3);text-align:center;line-height:1.6;}
+    .modal-input{width:100%;background:var(--panel2);border:1px solid var(--border2);border-radius:6px;padding:9px 13px;color:var(--text);font-family:var(--mono);font-size:14px;outline:none;transition:border-color .15s;}
+    .modal-input:focus{border-color:var(--amber);}
+    .modal-input.shake{animation:shake .35s ease;}
+    @keyframes shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-8px)}40%{transform:translateX(8px)}60%{transform:translateX(-5px)}80%{transform:translateX(5px)}}
+    .modal-err{font-family:var(--mono);font-size:10px;color:var(--red);min-height:14px;text-align:center;width:100%;}
+    .modal-row{display:flex;gap:8px;width:100%;}
+    .btn-cancel{flex:1;padding:9px;background:transparent;border:1px solid var(--border2);border-radius:6px;color:var(--text2);font-family:var(--disp);font-size:12px;font-weight:700;letter-spacing:1px;text-transform:uppercase;cursor:pointer;transition:all .15s;}
+    .btn-cancel:hover{border-color:var(--text2);color:var(--text);}
+    .btn-primary{flex:2;padding:9px;background:var(--amber);border:none;border-radius:6px;color:#000;font-family:var(--disp);font-size:12px;font-weight:900;letter-spacing:2px;text-transform:uppercase;cursor:pointer;transition:background .15s;}
+    .btn-primary:hover{background:var(--amber2);}
+    .btn-hint{font-family:var(--mono);font-size:9px;color:var(--text3);text-align:center;line-height:1.5;}
+    /* lockout bar */
+    #lockout-bar{display:none;width:100%;background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.3);border-radius:5px;padding:7px 12px;font-family:var(--mono);font-size:10px;color:var(--red);text-align:center;}
+
+    /* ── ADMIN PANEL ── */
+    #admin-panel .modal-box{width:380px;max-height:80vh;overflow-y:auto;gap:10px;}
+    .admin-head{display:flex;align-items:center;justify-content:space-between;width:100%;}
+    .user-row{display:flex;align-items:center;gap:8px;padding:8px 10px;background:var(--panel2);border:1px solid var(--border);border-radius:6px;width:100%;}
+    .user-row-name{font-family:var(--disp);font-size:13px;font-weight:800;color:var(--text);flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+    .user-role-badge{font-family:var(--mono);font-size:9px;font-weight:700;letter-spacing:1px;padding:2px 7px;border-radius:3px;flex-shrink:0;}
+    .user-row-btns{display:flex;gap:3px;flex-shrink:0;}
+    .role-btn{font-family:var(--mono);font-size:9px;padding:3px 6px;border-radius:3px;border:1px solid var(--border2);background:transparent;color:var(--text2);cursor:pointer;transition:all .12s;}
+    .role-btn:hover{border-color:var(--amber);color:var(--amber);}
+    .role-btn.active{border-color:var(--amber);color:var(--amber);background:rgba(245,158,11,.1);}
+    .del-user-btn{font-family:var(--mono);font-size:9px;padding:3px 6px;border-radius:3px;border:1px solid transparent;background:transparent;color:var(--text3);cursor:pointer;transition:all .12s;}
+    .del-user-btn:hover{border-color:var(--red);color:var(--red);}
+
+    /* ── CONTACTS PANEL ── */
+    #contacts-panel{position:fixed;top:50px;right:-320px;width:300px;height:calc(100% - 50px);background:var(--surf);border-left:1px solid var(--border);z-index:1500;display:flex;flex-direction:column;transition:right .25s ease;box-shadow:-4px 0 20px rgba(0,0,0,.5);}
+    #contacts-panel.open{right:0;}
+    .cp-head{padding:12px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-shrink:0;}
+    .cp-title{font-family:var(--disp);font-size:12px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--text2);}
+    .cp-close{background:transparent;border:none;color:var(--text2);font-size:18px;cursor:pointer;}
+    .cp-body{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;touch-action:pan-y;padding:10px;display:flex;flex-direction:column;gap:8px;}
+    .cp-section-title{font-family:var(--disp);font-size:9px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--text3);padding:4px 2px;}
+    .contact-row{display:flex;align-items:center;gap:10px;padding:8px 10px;background:var(--panel);border:1px solid var(--border);border-radius:6px;}
+    .contact-avatar{width:32px;height:32px;border-radius:50%;background:var(--panel2);border:1px solid var(--border2);display:flex;align-items:center;justify-content:center;font-family:var(--disp);font-size:13px;font-weight:900;color:var(--text2);flex-shrink:0;}
+    .contact-avatar.online{border-color:var(--green);color:var(--green);}
+    .contact-info{flex:1;min-width:0;}
+    .contact-name{font-family:var(--disp);font-size:13px;font-weight:800;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+    .contact-status{font-family:var(--mono);font-size:10px;color:var(--text3);margin-top:1px;}
+    .contact-status.online{color:var(--green);}
+    .contact-btns{display:flex;gap:5px;flex-shrink:0;}
+    .cbt{background:var(--panel2);border:1px solid var(--border2);border-radius:4px;color:var(--text2);font-size:12px;padding:4px 8px;cursor:pointer;transition:all .12s;}
+    .cbt.call{border-color:var(--green);color:var(--green);}
+    .cbt.call:hover{background:rgba(34,197,94,.1);}
+    .cbt.del:hover{border-color:var(--red);color:var(--red);}
+    .cp-add{display:flex;gap:6px;padding:10px;border-top:1px solid var(--border);flex-shrink:0;}
+    .cp-add input{flex:1;background:var(--panel);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--body);font-size:13px;padding:6px 8px;outline:none;}
+    .cp-add input:focus{border-color:var(--cyan);}
+    .cp-add input::placeholder{color:var(--text3);}
+    .cp-add-btn{padding:6px 12px;background:var(--cyan);border:none;border-radius:5px;color:#000;font-family:var(--disp);font-size:11px;font-weight:900;letter-spacing:1px;cursor:pointer;}
+
+    /* ── INCOMING CALL BANNER ── */
+    #call-banner{position:fixed;bottom:-100px;left:50%;transform:translateX(-50%);z-index:2500;background:rgba(10,14,22,.96);border:1px solid rgba(255,255,255,.15);border-radius:10px;padding:12px 16px;display:flex;align-items:center;gap:14px;box-shadow:0 8px 40px rgba(0,0,0,.8);backdrop-filter:blur(12px);transition:bottom .3s cubic-bezier(.34,1.56,.64,1);white-space:nowrap;min-width:280px;}
+    #call-banner.show{bottom:24px;}
+    .call-dot{width:9px;height:9px;border-radius:50%;background:var(--red);flex-shrink:0;animation:livepulse 1.2s ease-in-out infinite;}
+    .call-info{display:flex;flex-direction:column;gap:2px;flex:1;min-width:0;}
+    .call-name{font-family:var(--disp);font-size:16px;font-weight:900;color:#fff;}
+    .call-sub{font-family:var(--mono);font-size:10px;color:rgba(255,255,255,.45);letter-spacing:1px;}
+    .call-btns{display:flex;gap:8px;flex-shrink:0;}
+    .call-ans{background:#22c55e;border:none;border-radius:6px;color:#fff;font-family:var(--disp);font-size:12px;font-weight:900;letter-spacing:1.5px;padding:8px 16px;cursor:pointer;}
+    .call-dec{background:#ef4444;border:none;border-radius:6px;color:#fff;font-family:var(--disp);font-size:12px;font-weight:900;letter-spacing:1.5px;padding:8px 16px;cursor:pointer;}
+
+    /* ── VC WINDOWS ── */
+    #vc-windows{position:fixed;top:60px;right:12px;z-index:1800;display:flex;flex-direction:column;gap:10px;pointer-events:none;}
+    .vc-win{width:210px;background:rgba(7,9,14,.92);border:1px solid rgba(255,255,255,.12);border-radius:8px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,.7);pointer-events:all;cursor:move;user-select:none;}
+    .vc-win.local{border-color:var(--amber);}
+    .vc-topbar{display:flex;align-items:center;justify-content:space-between;padding:6px 10px;background:rgba(0,0,0,.5);}
+    .vc-name{font-family:var(--disp);font-size:12px;font-weight:800;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:120px;}
+    .vc-btns{display:flex;gap:5px;}
+    .vc-ico{background:rgba(255,255,255,.12);border:none;border-radius:4px;color:#fff;font-size:10px;padding:3px 6px;cursor:pointer;}
+    .vc-ico.muted{background:rgba(239,68,68,.4);}
+    .vc-video{width:100%;aspect-ratio:4/3;object-fit:cover;display:block;background:#000;}
+    .vc-footer{display:flex;align-items:center;justify-content:space-between;padding:5px 10px;background:rgba(0,0,0,.6);}
+    .vc-live-badge{display:flex;align-items:center;gap:5px;font-family:var(--disp);font-size:10px;font-weight:900;color:#fff;background:var(--red);border-radius:3px;padding:2px 6px;}
+    .vc-live-dot{width:5px;height:5px;border-radius:50%;background:#fff;animation:livepulse 1.2s ease-in-out infinite;}
+    .vc-namelabel{font-family:var(--disp);font-size:10px;font-weight:700;color:rgba(255,255,255,.7);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:110px;}
+    #vc-modal .modal-title{color:var(--red);}
+
+    /* ── RESPONSIVE ── */
+    @media(max-width:680px){
+      #sv,#rv{flex-direction:column;overflow:hidden;}
+      #sf,#rfp{width:100%;min-width:unset;flex:0 0 auto;max-height:58%;border-right:none;border-left:none;border-bottom:1px solid var(--border);overflow:hidden;}
+      #smp,#rmp{flex:1;min-height:100px;}
+      #contacts-panel{width:100%;right:-100%;}
+      #vc-windows{top:auto;bottom:70px;right:8px;}
+      .vc-win{width:155px;}
+      .logo span{display:none;}
+    }
+  </style>
+</head>
+<body>
+
+<!-- TOP BAR -->
+<div id="topbar">
+  <div class="logo"><div class="live-dot"></div>Storm<span>Relay</span></div>
+  <div class="tabs">
+    <button class="tab on" onclick="goTab('s')">⬆ Send</button>
+    <button class="tab"    onclick="goTab('r')">⬇ Receive</button>
+  </div>
+  <div id="conn-badge"><div id="conn-dot"></div><span id="conn-txt">INIT</span></div>
+  <div id="user-badge">
+    <span class="u-name" id="topbar-username"></span>
+    <span class="u-role" id="topbar-role"></span>
+    <span id="admin-btn" onclick="openAdmin()">⚙ ADMIN</span>
+    <span id="signout-btn" onclick="authSignOut()" title="Sign out">✕</span>
+  </div>
+  <button id="auth-btn" class="tb-btn" onclick="showAuthModal()">🔑 SIGN IN</button>
+  <button id="chime-btn" class="tb-btn" onclick="toggleChime()" title="Mute chime" style="color:var(--text2);border:1px solid var(--border2);">🔔</button>
+  <button class="tb-btn" onclick="playChime()" title="Test chime" style="color:var(--text2);border:1px solid var(--border2);">▶ TEST</button>
+  <button id="calls-btn" class="tb-btn" onclick="toggleContacts()">📞 CALLS</button>
+</div>
+
+<!-- INCOMING CALL BANNER -->
+<div id="call-banner">
+  <div class="call-dot"></div>
+  <div class="call-info">
+    <div class="call-name" id="call-caller-name">Someone</div>
+    <div class="call-sub">IS CALLING</div>
+  </div>
+  <div class="call-btns">
+    <button class="call-ans" onclick="vcAnswerCall()">ANSWER</button>
+    <button class="call-dec" onclick="vcDeclineCall()">DECLINE</button>
+  </div>
+</div>
+
+<!-- CONTACTS PANEL -->
+<div id="contacts-panel">
+  <div class="cp-head">
+    <div class="cp-title">📞 Calls &amp; Contacts</div>
+    <button class="cp-close" onclick="toggleContacts()">✕</button>
+  </div>
+  <div class="cp-body" id="cp-body">
+    <div class="cp-section-title">ONLINE NOW</div>
+    <div id="cp-online"></div>
+    <div class="cp-section-title" style="margin-top:8px">PINNED CONTACTS</div>
+    <div id="cp-pinned"></div>
+  </div>
+  <div class="cp-add">
+    <input id="cp-add-input" type="text" placeholder="Name to pin…" maxlength="30"
+      onkeydown="if(event.key==='Enter')cpAddContact()">
+    <button class="cp-add-btn" onclick="cpAddContact()">+ PIN</button>
+  </div>
+</div>
+
+<!-- VC FLOATING WINDOWS -->
+<div id="vc-windows"></div>
+
+<!-- AUTH MODAL -->
+<div id="auth-modal" class="modal-overlay">
+  <div class="modal-box">
+    <div style="font-size:30px">⛈️</div>
+    <div class="modal-title" style="color:var(--amber)">StormRelay</div>
+    <div class="modal-sub" id="auth-sub">Sign in to access send &amp; delete features.</div>
+    <div id="auth-signin" style="width:100%;display:flex;flex-direction:column;gap:9px">
+      <input class="modal-input" id="si-user" type="text" placeholder="Username" maxlength="30" autocomplete="username"
+        onkeydown="if(event.key==='Enter')document.getElementById('si-pass').focus()">
+      <input class="modal-input" id="si-pass" type="password" placeholder="Password" autocomplete="current-password"
+        onkeydown="if(event.key==='Enter')authSignIn()">
+      <div id="lockout-bar"></div>
+      <div class="modal-err" id="si-err"></div>
+      <button class="btn-primary" onclick="authSignIn()">▶ Sign In</button>
+      <button class="btn-cancel" onclick="authShowSignUp()">Create Account</button>
+    </div>
+    <div id="auth-signup" style="width:100%;display:none;flex-direction:column;gap:9px">
+      <input class="modal-input" id="su-user" type="text" placeholder="Username (min 3 chars)" maxlength="30" autocomplete="username"
+        onkeydown="if(event.key==='Enter')document.getElementById('su-pass').focus()">
+      <input class="modal-input" id="su-pass" type="password" placeholder="Password (min 8 chars)" autocomplete="new-password"
+        onkeydown="if(event.key==='Enter')document.getElementById('su-pass2').focus()">
+      <input class="modal-input" id="su-pass2" type="password" placeholder="Confirm Password" autocomplete="new-password"
+        onkeydown="if(event.key==='Enter')authSignUp()">
+      <div class="modal-err" id="su-err"></div>
+      <button class="btn-primary" onclick="authSignUp()">▶ Create Account</button>
+      <button class="btn-cancel" onclick="authShowSignIn()">← Back to Sign In</button>
+    </div>
+    <div class="btn-hint">New accounts start as Viewer. Admin grants Send/Delete access.</div>
+  </div>
+</div>
+
+<!-- VC NAME MODAL -->
+<div id="vc-modal" class="modal-overlay">
+  <div class="modal-box">
+    <div style="font-size:30px">🎙</div>
+    <div class="modal-title" style="color:var(--red)">Go Live</div>
+    <div class="modal-sub">Enter your on-screen name.</div>
+    <input class="modal-input" id="vc-name-input" type="text" placeholder="e.g. StormChaser99" maxlength="20"
+      onkeydown="if(event.key==='Enter')vcConfirmName()">
+    <div class="modal-err" id="vc-name-err"></div>
+    <div class="modal-row">
+      <button class="btn-cancel" onclick="vcCancelModal()">Cancel</button>
+      <button class="btn-primary" onclick="vcConfirmName()">▶ Go Live</button>
+    </div>
+  </div>
+</div>
+
+<!-- ADMIN PANEL -->
+<div id="admin-panel" class="modal-overlay">
+  <div class="modal-box">
+    <div class="admin-head">
+      <div class="modal-title" style="color:var(--red);font-size:15px">⚙ Admin Panel</div>
+      <button class="btn-cancel" style="flex:none;padding:4px 10px;font-size:11px" onclick="closeAdmin()">✕ Close</button>
+    </div>
+    <div id="admin-users" style="width:100%;display:flex;flex-direction:column;gap:7px"></div>
+  </div>
+</div>
+
+<!-- MAIN APP -->
+<div id="app">
+  <!-- SEND VIEW -->
+  <div class="view on" id="sv">
+    <div id="sf">
+      <div class="ph"><span class="acc">●</span> Transmit Report</div>
+      <div class="fscroll">
+        <div class="fg">
+          <div class="fl">Handle / Callsign</div>
+          <input class="fi" id="ihandle" type="text" placeholder="e.g. StormChaser99, N5XYZ…" maxlength="40">
+        </div>
+        <div class="fg">
+          <div class="fl">Event Type</div>
+          <div class="sevgrid" id="sevgrid"></div>
+        </div>
+        <div class="fg">
+          <div class="fl">Cloud Feature <span style="color:var(--text3);font-weight:400;font-size:9px">· optional</span></div>
+          <div class="sevgrid" id="cloudgrid"></div>
+        </div>
+        <div class="fg">
+          <div class="fl">Damage Tag <span style="color:var(--text3);font-weight:400;font-size:9px">· post-event EF rating</span></div>
+          <div class="sevgrid" id="damagegrid"></div>
+        </div>
+        <div class="fg">
+          <div class="fl">Storm Notes</div>
+          <textarea class="fi" id="inotes" placeholder="Debris, motion, size, structure, direction…" maxlength="500"></textarea>
+        </div>
+        <div class="fg">
+          <div class="fl">Location</div>
+          <div class="locdisp empty" id="locdisp">No location set</div>
+          <div class="brow" style="margin-top:4px">
+            <button class="smb" onclick="doGPS()">📍 GPS</button>
+            <button class="smb" id="pinbtn" onclick="togglePin()">🗺 Pin</button>
+            <button class="smb" onclick="clearLoc()">✕ Clear</button>
+          </div>
+        </div>
+        <div class="fg">
+          <div class="fl">Damage Track</div>
+          <div class="trackst" id="trackst">No track drawn</div>
+          <div class="brow" style="margin-top:4px">
+            <button class="smb" id="drawbtn" onclick="toggleDraw()">✏ Draw</button>
+            <button class="smb" onclick="finishDraw()">✓ Done</button>
+            <button class="smb" onclick="clearTrack()">✕ Clear</button>
+          </div>
+        </div>
+        <div class="fg">
+          <div class="fl">Photo</div>
+          <div class="phzn">
+            <input type="file" id="phinput" accept="image/*" onchange="onPhoto(event)">
+            <div class="phzn-lbl" id="phzn-lbl">Tap to attach photo</div>
+            <img class="phprev" id="phprev" alt="">
+          </div>
+          <div class="progbar" id="progbar"><div class="progfill" id="progfill"></div></div>
+        </div>
+        <button id="txbtn" onclick="submitReport()">▶ Transmit Report</button>
+        <div id="txmsg"></div>
+      </div>
+    </div>
+    <div id="smp"><div id="smap"></div><div class="moverlay" id="mhint"></div></div>
+  </div>
+
+  <!-- RECEIVE VIEW -->
+  <div class="view" id="rv">
+    <div id="rmp"><div id="rmap"></div></div>
+    <div id="rfp">
+      <div class="fhead">
+        <div class="fhead-title">Live Reports</div>
+        <div id="rcount">—</div>
+      </div>
+      <div id="ch-filter">
+        <button class="cf-btn on" data-ch="all" onclick="setChFilter('all',this)">All</button>
+        <!-- 🔧 Add your channel filter buttons here, matching the channel names used in StormShots -->
+        <!-- Example: <button class="cf-btn" data-ch="MyChannel" onclick="setChFilter('MyChannel',this)">My Channel</button> -->
+      </div>
+      <div id="feedlist">
+        <div class="emptyfeed"><div style="font-size:30px">📡</div><div class="elabel">Awaiting Reports</div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.39.3/dist/umd/supabase.min.js"></script>
+<script>
+// ── SUPABASE ──────────────────────────────────────────────────────
+const SUPA_URL='YOUR_SUPABASE_URL'; // 🔧 Replace with your Supabase project URL
+const SUPA_KEY='YOUR_SUPABASE_ANON_KEY'; // 🔧 Replace with your Supabase anon key
+if(typeof window.supabase==='undefined'){alert('Supabase failed to load. Check connection and reload.');throw new Error('Supabase CDN failed');}
+const supa=window.supabase.createClient(SUPA_URL,SUPA_KEY);
+
+// ── CRYPTO HELPERS ────────────────────────────────────────────────
+// PBKDF2 — 200k iterations + per-user salt (FIX #2)
+async function deriveKey(password, saltHex){
+  const enc=new TextEncoder();
+  const km=await crypto.subtle.importKey('raw',enc.encode(password),'PBKDF2',false,['deriveBits']);
+  const salt=saltHex?hexToBytes(saltHex):crypto.getRandomValues(new Uint8Array(16));
+  const bits=await crypto.subtle.deriveBits({name:'PBKDF2',hash:'SHA-256',salt,iterations:200000},km,256);
+  return{hash:bytesToHex(new Uint8Array(bits)),salt:bytesToHex(salt)};
+}
+function bytesToHex(buf){return Array.from(buf).map(b=>b.toString(16).padStart(2,'0')).join('');}
+function hexToBytes(hex){return new Uint8Array((hex.match(/.{2}/g)??[]).map(b=>parseInt(b,16)));}
+
+// FIX #4: Legacy invite code as PBKDF2 hash — plain text never in source
+const LEGACY_HASH='19fb627a67e3a65969d6d300c35df69cf60aa75406f66c01857525a3d18d9f77';
+const LEGACY_SALT='a3f8c2e1b9d4a7f0c6e2b8d5a1f4c9e3';
+
+// ── SEVERITY ──────────────────────────────────────────────────────
+const SEVS=[
+  {id:'TORNADO',label:'Tornado',bg:'#dc2626',fg:'#fff'},
+  {id:'FUNNEL',label:'Funnel',bg:'#c084fc',fg:'#000'},
+  {id:'WALL',label:'Wall Cld',bg:'#a78bfa',fg:'#000'},
+  {id:'HAIL',label:'Hail',bg:'#22d3ee',fg:'#000'},
+  {id:'FLOOD',label:'Flood',bg:'#3b82f6',fg:'#fff'},
+  {id:'WIND',label:'Wind Dmg',bg:'#34d399',fg:'#000'},
+  {id:'SNOW',label:'Snow',bg:'#bfdbfe',fg:'#1e3a5f'},
+  {id:'DAMAGE',label:'Damage',bg:'#92400e',fg:'#fff'},
+  {id:'OTHER',label:'Other',bg:'#4b5563',fg:'#fff'},
+];
+
+// Damage tags — post-event EF rating applied after the fact
+const DAMAGE_TAGS=[
+  {id:'EF0',label:'EF0',bg:'#fde68a',fg:'#000'},{id:'EF1',label:'EF1',bg:'#fbbf24',fg:'#000'},
+  {id:'EF2',label:'EF2',bg:'#f97316',fg:'#000'},{id:'EF3',label:'EF3',bg:'#ef4444',fg:'#fff'},
+  {id:'EF4',label:'EF4',bg:'#dc2626',fg:'#fff'},{id:'EF5',label:'EF5+',bg:'#7f1d1d',fg:'#fff'},
+  {id:'PDS',label:'PDS',bg:'#6d28d9',fg:'#fff'},
+];
+
+// Cloud features
+const CLOUD_FEATURES=[
+  {id:'MESO',label:'Mesocyclone',bg:'#7c3aed',fg:'#fff'},
+  {id:'WALLCLOUD',label:'Wall Cloud',bg:'#a78bfa',fg:'#000'},
+  {id:'ROTWALLCLOUD',label:'Rot. Wall Cloud',bg:'#6d28d9',fg:'#fff'},
+  {id:'SHELFCLOUD',label:'Shelf Cloud',bg:'#0ea5e9',fg:'#fff'},
+  {id:'ANVIL',label:'Anvil',bg:'#475569',fg:'#fff'},
+  {id:'MAMMATUS',label:'Mammatus',bg:'#c084fc',fg:'#000'},
+  {id:'SCUD',label:'Scud',bg:'#334155',fg:'#fff'},
+  {id:'NOTABLECLOUD',label:'Notable Cloud',bg:'#1e40af',fg:'#fff'},
+];
+const sevMap=Object.fromEntries(SEVS.map(s=>[s.id,s]));
+const damageTagMap=Object.fromEntries(DAMAGE_TAGS.map(s=>[s.id,s]));
+const cloudFeatureMap=Object.fromEntries(CLOUD_FEATURES.map(s=>[s.id,s]));
+// Combined lookup for rendering received reports
+const allBadgeMap={...sevMap,...damageTagMap,...cloudFeatureMap};
+
+let selSev=null,selDamageTag=null,selCloudFeature=null;
+
+SEVS.forEach(s=>{
+  const b=document.createElement('button');
+  b.className='sb';b.textContent=s.label;b.dataset.id=s.id;
+  b.onclick=()=>pickSev(s.id);
+  document.getElementById('sevgrid').appendChild(b);
+});
+DAMAGE_TAGS.forEach(s=>{
+  const b=document.createElement('button');
+  b.className='sb';b.textContent=s.label;b.dataset.id=s.id;
+  b.onclick=()=>pickDamageTag(s.id);
+  document.getElementById('damagegrid').appendChild(b);
+});
+CLOUD_FEATURES.forEach(s=>{
+  const b=document.createElement('button');
+  b.className='sb';b.textContent=s.label;b.dataset.id=s.id;
+  b.onclick=()=>pickCloudFeature(s.id);
+  document.getElementById('cloudgrid').appendChild(b);
+});
+
+function pickSev(id){
+  selSev=selSev===id?null:id;
+  document.querySelectorAll('#sevgrid .sb').forEach(b=>{
+    const on=b.dataset.id===selSev;
+    b.classList.toggle('on',on);
+    b.style.background=on?sevMap[b.dataset.id].bg:'';
+    b.style.color=on?sevMap[b.dataset.id].fg:'';
+  });
+}
+function pickDamageTag(id){
+  selDamageTag=selDamageTag===id?null:id;
+  document.querySelectorAll('#damagegrid .sb').forEach(b=>{
+    const on=b.dataset.id===selDamageTag;
+    b.classList.toggle('on',on);
+    b.style.background=on?damageTagMap[b.dataset.id].bg:'';
+    b.style.color=on?damageTagMap[b.dataset.id].fg:'';
+  });
+}
+function pickCloudFeature(id){
+  selCloudFeature=selCloudFeature===id?null:id;
+  document.querySelectorAll('#cloudgrid .sb').forEach(b=>{
+    const on=b.dataset.id===selCloudFeature;
+    b.classList.toggle('on',on);
+    b.style.background=on?cloudFeatureMap[b.dataset.id].bg:'';
+    b.style.color=on?cloudFeatureMap[b.dataset.id].fg:'';
+  });
+}
+
+// ── MAPS ──────────────────────────────────────────────────────────
+const CTR=[33.1301,-95.6009];
+const TILE='https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
+const ATTR='&copy; OpenStreetMap &copy; CARTO';
+const smap=L.map('smap',{zoomControl:true}).setView(CTR,9);
+L.tileLayer(TILE,{attribution:ATTR,maxZoom:19}).addTo(smap);
+const rmap=L.map('rmap',{zoomControl:true}).setView(CTR,9);
+L.tileLayer(TILE,{attribution:ATTR,maxZoom:19}).addTo(rmap);
+delete L.Icon.Default.prototype._getIconUrl;
+L.Icon.Default.mergeOptions({
+  iconUrl:'https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/images/marker-icon.png',
+  iconRetinaUrl:'https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/images/marker-icon-2x.png',
+  shadowUrl:'https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/images/marker-shadow.png',
+});
+setTimeout(()=>{smap.invalidateSize();rmap.invalidateSize();},200);
+window.addEventListener('resize',()=>{smap.invalidateSize();rmap.invalidateSize();});
+
+// ── SEND MAP STATE ────────────────────────────────────────────────
+let pinMode=false,drawMode=false,pinMarker=null,pinCoords=null;
+let trkPts=[],trkLine=null,trkDots=[];
+
+function togglePin(){
+  pinMode=!pinMode;
+  if(pinMode){drawMode=false;updDrawBtn();}
+  const hint=document.getElementById('mhint');
+  if(pinMode){document.getElementById('pinbtn').classList.add('cyan-on');smap.getContainer().style.cursor='crosshair';hint.textContent='Click map to place marker';hint.className='moverlay show cyan';}
+  else{document.getElementById('pinbtn').classList.remove('cyan-on');smap.getContainer().style.cursor='';hint.className='moverlay';}
+}
+function clearLoc(){
+  if(pinMarker){smap.removeLayer(pinMarker);pinMarker=null;}
+  pinCoords=null;pinMode=false;
+  document.getElementById('pinbtn').classList.remove('cyan-on');
+  smap.getContainer().style.cursor='';document.getElementById('mhint').className='moverlay';updLocDisp();
+}
+function updLocDisp(){
+  const el=document.getElementById('locdisp');
+  if(pinCoords){el.classList.remove('empty');el.textContent=`${pinCoords.lat.toFixed(5)}, ${pinCoords.lng.toFixed(5)}`;}
+  else{el.classList.add('empty');el.textContent='No location set';}
+}
+function doGPS(){
+  if(!navigator.geolocation)return setMsg('GPS unavailable','err');
+  setMsg('Acquiring GPS…','info');
+  navigator.geolocation.getCurrentPosition(pos=>{
+    const ll={lat:pos.coords.latitude,lng:pos.coords.longitude};
+    placePin(ll);smap.setView([ll.lat,ll.lng],13);setMsg('GPS acquired','ok');
+  },e=>setMsg('GPS error: '+e.message,'err'));
+}
+function placePin(ll){
+  if(pinMarker)smap.removeLayer(pinMarker);
+  pinMarker=L.marker([ll.lat,ll.lng]).addTo(smap);
+  pinCoords=ll;updLocDisp();
+}
+function toggleDraw(){
+  drawMode=!drawMode;
+  if(drawMode){pinMode=false;document.getElementById('pinbtn').classList.remove('cyan-on');}
+  updDrawBtn();
+  const hint=document.getElementById('mhint');
+  if(drawMode){smap.getContainer().style.cursor='crosshair';hint.textContent='Click to add points · double-click to finish';hint.className='moverlay show';}
+  else{smap.getContainer().style.cursor='';hint.className='moverlay';}
+}
+function updDrawBtn(){document.getElementById('drawbtn').classList.toggle('red-on',drawMode);}
+function finishDraw(){drawMode=false;updDrawBtn();smap.getContainer().style.cursor='';document.getElementById('mhint').className='moverlay';updTrackSt();}
+function clearTrack(){
+  finishDraw();trkPts=[];
+  if(trkLine){smap.removeLayer(trkLine);trkLine=null;}
+  trkDots.forEach(d=>smap.removeLayer(d));trkDots=[];updTrackSt();
+}
+function updTrackSt(){
+  const el=document.getElementById('trackst');
+  if(trkPts.length>0){el.classList.add('has');el.textContent=`${trkPts.length} pts — ≈${trackMi().toFixed(1)} mi`;}
+  else{el.classList.remove('has');el.textContent='No track drawn';}
+}
+function trackMi(){
+  if(trkPts.length<2)return 0;
+  let d=0;for(let i=1;i<trkPts.length;i++)d+=L.latLng(trkPts[i-1]).distanceTo(L.latLng(trkPts[i]));
+  return d/1609.34;
+}
+// FIX #12: validate coords are real numbers in range
+function validCoord(lat,lng){
+  return typeof lat==='number'&&typeof lng==='number'&&lat>=-90&&lat<=90&&lng>=-180&&lng<=180;
+}
+smap.on('click',e=>{
+  if(pinMode){
+    placePin(e.latlng);pinMode=false;
+    document.getElementById('pinbtn').classList.remove('cyan-on');
+    smap.getContainer().style.cursor='';document.getElementById('mhint').className='moverlay';return;
+  }
+  if(drawMode){
+    if(trkPts.length>=200){setMsg('Track limit: 200 points','err');return;}
+    const p={lat:e.latlng.lat,lng:e.latlng.lng};
+    if(!validCoord(p.lat,p.lng))return;
+    trkPts.push(p);
+    trkDots.push(L.circleMarker([p.lat,p.lng],{radius:4,color:'#ef4444',fillColor:'#ef4444',fillOpacity:1,weight:0}).addTo(smap));
+    if(trkLine)smap.removeLayer(trkLine);
+    trkLine=L.polyline(trkPts.map(x=>[x.lat,x.lng]),{color:'#ef4444',weight:3,opacity:.8,dashArray:'8,5'}).addTo(smap);
+    updTrackSt();
+  }
+});
+smap.on('dblclick',()=>{if(drawMode)finishDraw();});
+
+// ── PHOTO ─────────────────────────────────────────────────────────
+// FIX #10: derive extension from MIME type, not filename
+const MIME_EXT={'image/jpeg':'jpg','image/jpg':'jpg','image/png':'png','image/webp':'webp','image/gif':'gif','image/heic':'heic','image/heif':'heif'};
+let selPhoto=null;
+function onPhoto(e){
+  const f=e.target.files[0];if(!f)return;
+  if(!f.type.startsWith('image/')){setMsg('File must be an image','err');document.getElementById('phinput').value='';return;}
+  if(!MIME_EXT[f.type]){setMsg('Unsupported image type','err');document.getElementById('phinput').value='';return;}
+  if(f.size>8*1024*1024){setMsg('Photo must be under 8MB','err');document.getElementById('phinput').value='';return;}
+  selPhoto=f;
+  const r=new FileReader();
+  r.onload=ev=>{const p=document.getElementById('phprev');p.src=ev.target.result;p.style.display='block';document.getElementById('phzn-lbl').style.display='none';};
+  r.readAsDataURL(f);
+}
+
+// ── IMAGE COMPRESSION ─────────────────────────────────────────────
+function compressImage(file,maxWidth,quality){
+  return new Promise(resolve=>{
+    const img=new window.Image();
+    const url=URL.createObjectURL(file);
+    img.onload=()=>{
+      URL.revokeObjectURL(url);
+      let w=img.width,h=img.height;
+      if(w>maxWidth){h=Math.round(h*maxWidth/w);w=maxWidth;}
+      const canvas=document.createElement('canvas');
+      canvas.width=w;canvas.height=h;
+      canvas.getContext('2d').drawImage(img,0,0,w,h);
+      canvas.toBlob(blob=>resolve(blob||file),'image/jpeg',quality);
+    };
+    img.onerror=()=>{URL.revokeObjectURL(url);resolve(file);};
+    img.src=url;
+  });
+}
+
+// ── SUBMIT REPORT ─────────────────────────────────────────────────
+async function submitReport(){
+  if(!sendUnlocked){showAuthModal();return;}
+  const handle=document.getElementById('ihandle').value.trim();
+  const notes=document.getElementById('inotes').value.trim();
+  if(!handle)return setMsg('Enter your handle / callsign','err');
+  if(!selSev&&!selDamageTag&&!selCloudFeature)return setMsg('Select at least one event type, damage tag, or cloud feature','err');
+  if(!pinCoords&&trkPts.length===0)return setMsg('Add a map pin or draw a track','err');
+
+  const btn=document.getElementById('txbtn');
+  btn.disabled=true;setMsg('Transmitting…','info');
+  try{
+    // Photo still uploads direct to Supabase Storage (anon upload — no server-side role needed for storage)
+    let photoUrl=null;
+    if(selPhoto){
+      const bar=document.getElementById('progbar'),fill=document.getElementById('progfill');
+      bar.style.display='block';fill.style.width='30%';
+      const ext=MIME_EXT[selPhoto.type]||'jpg';
+      const path=`${Date.now()}.${ext}`;
+      const compressedPhoto=await compressImage(selPhoto,1920,0.82);
+      const{error:upErr}=await supa.storage.from('photos').upload(path,compressedPhoto,{contentType:'image/jpeg',cacheControl:'3600'});
+      if(upErr)throw new Error('Photo upload failed');
+      fill.style.width='100%';
+      const{data:urlData}=supa.storage.from('photos').getPublicUrl(path);
+      photoUrl=urlData.publicUrl;
+      bar.style.display='none';fill.style.width='0%';
+    }
+    // Direct Supabase insert (client-side role gate already checked above)
+    const{error}=await supa.from('reports').insert({
+      submitted_by:handle,severity:selSev||null,notes:notes||null,
+      lat:pinCoords?.lat??null,lng:pinCoords?.lng??null,
+      damage_track:trkPts.length>0?trkPts:null,photo_url:photoUrl,
+      damage_tag:selDamageTag||null,
+      cloud_feature:selCloudFeature||null,
+    });
+    if(error)throw new Error('Insert failed');
+    document.getElementById('inotes').value='';
+    clearLoc();clearTrack();selPhoto=null;
+    document.getElementById('phprev').style.display='none';
+    document.getElementById('phzn-lbl').style.display='block';
+    document.getElementById('phinput').value='';
+    // Reset all selectors
+    selSev=null;selDamageTag=null;selCloudFeature=null;
+    ['sevgrid','damagegrid','cloudgrid'].forEach(id=>{
+      document.querySelectorAll(`#${id} .sb`).forEach(b=>{b.classList.remove('on');b.style.background='';b.style.color='';});
+    });
+    setMsg('✓ Report transmitted!','ok');
+    loadReports();
+  }catch(e){
+    console.error('[SR submit]',e.message?.slice(0,40)||'ERR');
+    setMsg('Error: '+(e.message||'Transmission failed'),'err');
+  }
+  btn.disabled=false;
+}
+
+// ── RECEIVE FEED ──────────────────────────────────────────────────
+let rMarkers=[],rTracks=[],allReports=[],pollInterval=null,rtConnected=false;
+let activeChFilter='all';
+
+function setChFilter(ch,btn){
+  activeChFilter=ch;
+  document.querySelectorAll('.cf-btn').forEach(b=>b.classList.toggle('on',b.dataset.ch===ch));
+  renderFeed(allReports);
+}
+
+async function loadReports(){
+  const{data,error}=await supa.from('reports')
+    .select('*')
+    .or('expires_at.is.null,expires_at.gt.'+new Date().toISOString())
+    .order('created_at',{ascending:false}).limit(50);
+  if(error){
+    setConn('error','DB ERR');
+    // FIX #13: log code only
+    console.error('[SR]',error.code||'DB_ERR');
+    document.getElementById('feedlist').innerHTML=`<div class="emptyfeed"><div style="font-size:26px">⚠️</div><div class="elabel" style="color:var(--red)">Connection Error</div><div style="font-family:var(--mono);font-size:10px;color:var(--text3);text-align:center;padding:0 10px;line-height:1.8;margin-top:6px">Check connection and reload.</div></div>`;
+    return;
+  }
+  allReports=data||[];renderFeed(allReports);setConn('live','LIVE');
+}
+
+function subscribeRealtime(){
+  try{
+    supa.channel('sr-reports-v3')
+      .on('postgres_changes',{event:'INSERT',schema:'public',table:'reports'},payload=>{
+        if(payload.new&&!allReports.find(r=>r.id===payload.new.id)){
+          allReports.unshift(payload.new);
+          if(allReports.length>100)allReports.pop();
+          renderFeed(allReports);
+          playChime();
+        }
+      })
+      .subscribe(status=>{
+        if(status==='SUBSCRIBED'){rtConnected=true;if(pollInterval){clearInterval(pollInterval);pollInterval=null;}}
+        if(status==='CHANNEL_ERROR'||status==='TIMED_OUT'||status==='CLOSED'){
+          rtConnected=false;
+          if(!pollInterval)pollInterval=setInterval(()=>loadReports(),15000);
+        }
+      });
+  }catch(e){if(!pollInterval)pollInterval=setInterval(()=>loadReports(),15000);}
+  if(!pollInterval)pollInterval=setInterval(()=>loadReports(),15000);
+}
+
+function renderFeed(reports){
+  // Apply channel filter — null intended_channel means sent to all
+  const visible=activeChFilter==='all'
+    ?reports
+    :reports.filter(r=>!r.intended_channel||r.intended_channel.toLowerCase()===activeChFilter.toLowerCase());
+  const list=document.getElementById('feedlist'),cnt=document.getElementById('rcount');
+  rMarkers.forEach(m=>rmap.removeLayer(m));rMarkers=[];
+  rTracks.forEach(t=>rmap.removeLayer(t));rTracks=[];
+  cnt.textContent=`${visible.length} report${visible.length!==1?'s':''}`;
+  if(!visible.length){list.innerHTML=`<div class="emptyfeed"><div style="font-size:30px">📡</div><div class="elabel">${activeChFilter==='all'?'Awaiting Reports':'No reports for this channel'}</div></div>`;return;}
+  list.innerHTML='';
+  visible.forEach(r=>{
+    const s=r.severity?sevMap[r.severity]||sevMap['OTHER']:{label:'—',bg:'#1e293b',fg:'#7a91a8'};
+    const t=timeAgo(new Date(r.created_at));
+    const card=document.createElement('div');card.className='card';
+    card.onclick=()=>{if(!card.classList.contains('del-mode'))focusReport(r);};
+    let pressTimer=null;
+    card.addEventListener('touchstart',()=>{
+      if(!deleteUnlocked)return;
+      pressTimer=setTimeout(()=>card.classList.add('del-mode'),600);
+    },{passive:true});
+    card.addEventListener('touchend',()=>clearTimeout(pressTimer),{passive:true});
+    card.addEventListener('touchmove',()=>clearTimeout(pressTimer),{passive:true});
+    card.addEventListener('contextmenu',e=>{
+      if(!deleteUnlocked)return;
+      e.preventDefault();card.classList.add('del-mode');
+    });
+    let icons='';
+    if(r.lat!=null)icons+=`<span class="ipill">📍</span>`;
+    if(r.damage_track)icons+=`<span class="ipill">⛔</span>`;
+    if(r.photo_url)icons+=`<span class="ipill">📷</span>`;
+    if(r.source==='stormshots')icons+=`<span class="ipill" style="color:var(--amber);border-color:rgba(245,158,11,.3)">📸</span>`;
+    if(r.intended_channel)icons+=`<span class="ipill" style="color:var(--cyan);border-color:rgba(34,211,238,.25)" title="Sent for ${esc(r.intended_channel)}">→${esc(r.intended_channel.replace('WX','').replace('WeatherWise','WW'))}</span>`;
+    card.innerHTML=`
+      <div class="ctop">
+        <div class="sevbadge" style="background:${s.bg};color:${s.fg}">${s.label}</div>
+        ${r.cloud_feature&&cloudFeatureMap[r.cloud_feature]?`<div class="sevbadge" style="background:${cloudFeatureMap[r.cloud_feature].bg};color:${cloudFeatureMap[r.cloud_feature].fg};opacity:.9">${cloudFeatureMap[r.cloud_feature].label}</div>`:''}
+        ${r.damage_tag&&damageTagMap[r.damage_tag]?`<div class="sevbadge" style="background:${damageTagMap[r.damage_tag].bg};color:${damageTagMap[r.damage_tag].fg};font-size:9px;opacity:.85">${damageTagMap[r.damage_tag].label}</div>`:''}
+        <div class="cmeta"><div class="chandle">${esc(r.submitted_by)}</div><div class="ctime">${t}</div></div>
+        <div class="cicons">${icons}</div>
+      </div>
+      <div class="cbody">
+        ${r.notes?`<div class="cnotes">${esc(r.notes)}</div>`:''}
+        ${r.lat!=null?`<div class="ccoords">${Number(r.lat).toFixed(4)}, ${Number(r.lng).toFixed(4)}</div>`:''}
+      </div>
+      ${r.photo_url?`<img class="cphoto" src="${esc(r.photo_url)}" loading="lazy" alt="Storm photo">`:''}
+      <div class="card-del-bar">
+        <div class="card-del-msg">🗑 Delete this report?</div>
+        <div class="card-del-btns">
+          <button class="card-del-cancel" onclick="this.closest('.card').classList.remove('del-mode');event.stopPropagation()">Cancel</button>
+          <button class="card-del-confirm" onclick="deleteReport('${esc(r.id)}',this.closest('.card'));event.stopPropagation()">Delete</button>
+        </div>
+      </div>
+    `;
+    list.appendChild(card);
+    // FIX #12: validate coords before rendering to map
+    if(r.lat!=null&&r.lng!=null&&validCoord(Number(r.lat),Number(r.lng))){
+      const icon=L.divIcon({
+        html:`<div style="background:${s.bg};color:${s.fg};font-family:'Barlow Condensed',sans-serif;font-weight:900;font-size:10px;padding:3px 7px;border-radius:3px;white-space:nowrap;box-shadow:0 2px 8px rgba(0,0,0,.6)">${s.label}</div>`,
+        className:'',iconAnchor:[20,10]
+      });
+      rMarkers.push(L.marker([r.lat,r.lng],{icon}).addTo(rmap)
+        .bindPopup(`<b>${esc(r.submitted_by)}</b><br>${s.label}${r.notes?'<br><small>'+esc(r.notes.slice(0,80))+'</small>':''}`));
+    }
+    if(r.damage_track&&r.damage_track.length>1){
+      // FIX #12: filter invalid points before rendering
+      const validPts=r.damage_track.filter(p=>validCoord(Number(p.lat),Number(p.lng)));
+      if(validPts.length>1){
+        const pl=L.polyline(validPts.map(p=>[p.lat,p.lng]),{color:s.bg,weight:4,opacity:.82}).addTo(rmap);
+        const last=validPts[validPts.length-1];
+        L.circleMarker([last.lat,last.lng],{radius:5,color:s.bg,fillColor:s.bg,fillOpacity:1,weight:0}).addTo(rmap);
+        rTracks.push(pl);
+      }
+    }
+  });
+}
+
+async function deleteReport(id,cardEl){
+  if(!deleteUnlocked)return;
+  cardEl.style.opacity='0.5';
+  const{error}=await supa.from('reports').delete().eq('id',id);
+  if(error){
+    cardEl.style.opacity='1';cardEl.classList.remove('del-mode');
+    console.error('[SR delete]',error.code||'ERR');
+    alert('Delete failed. Check your permissions.');return;
+  }
+  allReports=allReports.filter(r=>r.id!==id);
+  renderFeed(allReports);
+}
+
+function focusReport(r){
+  goTab('r');
+  setTimeout(()=>{
+    if(r.lat!=null&&r.lng!=null&&validCoord(Number(r.lat),Number(r.lng)))rmap.setView([r.lat,r.lng],13,{animate:true});
+    else if(r.damage_track?.length>0){
+      const vp=r.damage_track.filter(p=>validCoord(Number(p.lat),Number(p.lng)));
+      if(vp.length>0)rmap.fitBounds(L.latLngBounds(vp.map(p=>[p.lat,p.lng])),{padding:[40,40]});
+    }
+  },80);
+}
+
+// ── AUTH SYSTEM ───────────────────────────────────────────────────
+let currentUser=null; // stores only {id} in memory — role always fetched from DB
+let sendUnlocked=false,deleteUnlocked=false,pendingSubmit=false;
+
+// FIX #5: brute force lockout
+const MAX_ATTEMPTS=5;
+const LOCKOUT_MS=5*60*1000;
+let loginAttempts=parseInt(sessionStorage.getItem('sr_attempts')||'0');
+let lockoutUntil=parseInt(sessionStorage.getItem('sr_lockout')||'0');
+
+function isLockedOut(){return Date.now()<lockoutUntil;}
+function recordFailedAttempt(){
+  loginAttempts++;
+  sessionStorage.setItem('sr_attempts',loginAttempts);
+  if(loginAttempts>=MAX_ATTEMPTS){
+    lockoutUntil=Date.now()+LOCKOUT_MS;
+    sessionStorage.setItem('sr_lockout',lockoutUntil);
+    showLockout();
+  }
+}
+function resetAttempts(){loginAttempts=0;lockoutUntil=0;sessionStorage.removeItem('sr_attempts');sessionStorage.removeItem('sr_lockout');}
+function showLockout(){
+  const bar=document.getElementById('lockout-bar');
+  const tick=()=>{
+    const rem=Math.ceil((lockoutUntil-Date.now())/1000);
+    if(rem<=0){bar.style.display='none';resetAttempts();return;}
+    bar.style.display='block';
+    bar.textContent=`Too many attempts. Try again in ${Math.floor(rem/60)}:${String(rem%60).padStart(2,'0')}`;
+    setTimeout(tick,1000);
+  };
+  tick();
+}
+if(isLockedOut())showLockout();
+
+function showAuthModal(){
+  authShowSignIn();
+  document.getElementById('auth-modal').classList.add('show');
+  setTimeout(()=>document.getElementById('si-user').focus(),100);
+}
+function closeAuthModal(){document.getElementById('auth-modal').classList.remove('show');}
+function authShowSignIn(){
+  document.getElementById('auth-signup').style.display='none';
+  document.getElementById('auth-signin').style.display='flex';
+  document.getElementById('si-err').textContent='';
+}
+function authShowSignUp(){
+  document.getElementById('auth-signin').style.display='none';
+  document.getElementById('auth-signup').style.display='flex';
+  document.getElementById('su-err').textContent='';
+  setTimeout(()=>document.getElementById('su-user').focus(),50);
+}
+
+async function authSignIn(){
+  if(isLockedOut()){showLockout();return;}
+  const username=document.getElementById('si-user').value.trim();
+  const password=document.getElementById('si-pass').value;
+  const errEl=document.getElementById('si-err');
+  errEl.textContent='';
+  if(!username||!password){errEl.textContent='Enter username and password';return;}
+
+  // Check legacy invite code via PBKDF2 — plain text never compared (FIX #4)
+  const{hash:legacyCheck}=await deriveKey(password,LEGACY_SALT);
+  if(legacyCheck===LEGACY_HASH){
+    currentUser={id:'legacy',username:username,role:'sender'};
+    sessionStorage.setItem('sr_uid','legacy');
+    authApplyUser(currentUser);closeAuthModal();resetAttempts();
+    if(pendingSubmit){pendingSubmit=false;submitReport();}
+    return;
+  }
+
+  // Fetch user record — then verify hash client-side
+  const{data,error}=await supa.from('sr_users')
+    .select('id,username,password_hash,password_salt,role')
+    .eq('username',username).single();
+  if(error||!data){
+    recordFailedAttempt();shake(document.getElementById('si-pass'));
+    errEl.textContent='Wrong username or password';return;
+  }
+  const{hash}=await deriveKey(password,data.password_salt);
+  if(hash!==data.password_hash){
+    recordFailedAttempt();shake(document.getElementById('si-pass'));
+    errEl.textContent='Wrong username or password';return;
+  }
+  // FIX #7: store only ID — role always re-fetched from DB on restore
+  sessionStorage.setItem('sr_uid',data.id);
+  currentUser={id:data.id,username:data.username,role:data.role};
+  authApplyUser(currentUser);closeAuthModal();resetAttempts();
+  if(pendingSubmit){pendingSubmit=false;submitReport();}
+}
+
+async function authSignUp(){
+  const username=document.getElementById('su-user').value.trim();
+  const password=document.getElementById('su-pass').value;
+  const password2=document.getElementById('su-pass2').value;
+  const errEl=document.getElementById('su-err');errEl.textContent='';
+  if(!username||username.length<3){errEl.textContent='Username must be at least 3 characters';return;}
+  if(!password||password.length<8){errEl.textContent='Password must be at least 8 characters';return;}
+  if(password!==password2){errEl.textContent='Passwords do not match';return;}
+  // Check username not taken
+  const{data:existing}=await supa.from('sr_users').select('id').eq('username',username).maybeSingle();
+  if(existing){errEl.textContent='Username already taken';return;}
+  // PBKDF2 hash with random salt (FIX #2)
+  const{hash,salt}=await deriveKey(password,null);
+  const{data,error}=await supa.from('sr_users')
+    .insert({username,password_hash:hash,password_salt:salt,role:'viewer'})
+    .select().single();
+  if(error){
+    console.error('[SR signup]',error.code||'ERR');
+    errEl.textContent='Sign up failed. Try a different username.';return;
+  }
+  sessionStorage.setItem('sr_uid',data.id);
+  currentUser={id:data.id,username:data.username,role:data.role};
+  authApplyUser(currentUser);closeAuthModal();
+}
+
+function authApplyUser(user){
+  if(!user)return;
+  const r=user.role;
+  sendUnlocked  =r==='sender'||r==='deleter'||r==='admin';
+  deleteUnlocked=r==='deleter'||r==='admin';
+  document.getElementById('auth-btn').style.display='none';
+  document.getElementById('user-badge').style.display='flex';
+  document.getElementById('topbar-username').textContent=user.username;
+  const roleBadge=document.getElementById('topbar-role');
+  roleBadge.textContent=r.toUpperCase();
+  roleBadge.className=`u-role role-${r}`;
+  document.getElementById('admin-btn').style.display=r==='admin'?'inline':'none';
+  if(allReports.length)renderFeed(allReports);
+}
+
+function authSignOut(){
+  currentUser=null;sendUnlocked=false;deleteUnlocked=false;
+  sessionStorage.removeItem('sr_uid');
+  document.getElementById('user-badge').style.display='none';
+  document.getElementById('auth-btn').style.display='block';
+  if(allReports.length)renderFeed(allReports);
+}
+
+// FIX #7: restore session — re-fetch live role from DB, never trust cached role
+(async function restoreSession(){
+  const uid=sessionStorage.getItem('sr_uid');
+  if(!uid)return;
+  if(uid==='legacy'){
+    currentUser={id:'legacy',username:'Guest',role:'sender'};
+    authApplyUser(currentUser);return;
+  }
+  const{data,error}=await supa.from('sr_users').select('id,username,role').eq('id',uid).single();
+  if(error||!data){sessionStorage.removeItem('sr_uid');return;}
+  currentUser={id:data.id,username:data.username,role:data.role};
+  authApplyUser(currentUser);
+})();
+
+document.getElementById('auth-modal').addEventListener('click',e=>{
+  if(e.target===document.getElementById('auth-modal'))closeAuthModal();
+});
+
+// ── ADMIN PANEL ───────────────────────────────────────────────────
+function openAdmin(){
+  if(currentUser?.role!=='admin')return;
+  document.getElementById('admin-panel').classList.add('show');
+  loadAdminUsers();
+}
+function closeAdmin(){document.getElementById('admin-panel').classList.remove('show');}
+document.getElementById('admin-panel').addEventListener('click',e=>{
+  if(e.target===document.getElementById('admin-panel'))closeAdmin();
+});
+
+async function loadAdminUsers(){
+  const{data,error}=await supa.from('sr_users').select('id,username,role,created_at').order('created_at',{ascending:true});
+  if(error){console.error('[SR admin]',error.code||'ERR');return;}
+  const container=document.getElementById('admin-users');
+  container.innerHTML='';
+  if(!data?.length){container.innerHTML='<div style="font-family:var(--mono);font-size:10px;color:var(--text3);text-align:center;padding:10px">No users</div>';return;}
+  const ROLES=['viewer','sender','deleter','admin'];
+  data.forEach(u=>{
+    const row=document.createElement('div');row.className='user-row';
+    row.innerHTML=`
+      <div class="user-row-name">${esc(u.username)}</div>
+      <div class="user-role-badge role-${u.role}">${u.role.toUpperCase()}</div>
+      <div class="user-row-btns">
+        ${ROLES.map(r=>`<button class="role-btn${u.role===r?' active':''}" onclick="setUserRole('${esc(u.id)}','${r}',this)">${r[0].toUpperCase()+r.slice(1)}</button>`).join('')}
+        <button class="del-user-btn" onclick="deleteUser('${esc(u.id)}',this)">🗑</button>
+      </div>
+    `;
+    container.appendChild(row);
+  });
+}
+
+async function setUserRole(userId,role,btn){
+  // FIX #6: whitelist — reject anything not in allowed set
+  const VALID=['viewer','sender','deleter','admin'];
+  if(!VALID.includes(role)){console.error('[SR] invalid role');return;}
+  const{error}=await supa.from('sr_users').update({role}).eq('id',userId);
+  if(error){console.error('[SR role]',error.code||'ERR');alert('Update failed');return;}
+  const row=btn.closest('.user-row');
+  row.querySelector('.user-role-badge').className=`user-role-badge role-${role}`;
+  row.querySelector('.user-role-badge').textContent=role.toUpperCase();
+  row.querySelectorAll('.role-btn').forEach(b=>b.classList.toggle('active',b.textContent.toLowerCase()===role));
+  if(currentUser&&currentUser.id===userId){currentUser.role=role;authApplyUser(currentUser);}
+}
+
+async function deleteUser(userId,btn){
+  if(!confirm('Delete this user account permanently?'))return;
+  const{error}=await supa.from('sr_users').delete().eq('id',userId);
+  if(error){console.error('[SR deluser]',error.code||'ERR');alert('Delete failed');return;}
+  btn.closest('.user-row').remove();
+}
+
+
+// ── CONTACTS PANEL ────────────────────────────────────────────────
+let contactsOpen=false,pinnedContacts=[],onlineUsers={};
+
+function toggleContacts(){
+  contactsOpen=!contactsOpen;
+  document.getElementById('contacts-panel').classList.toggle('open',contactsOpen);
+  document.getElementById('calls-btn').classList.toggle('active',contactsOpen);
+  if(contactsOpen)loadPinnedContacts();
+}
+async function loadPinnedContacts(){
+  const{data,error}=await supa.from('contacts').select('*').order('created_at',{ascending:true});
+  if(error){console.error('[SR contacts]',error.code||'CONTACTS_ERR');return;}
+  pinnedContacts=data||[];renderContacts();
+}
+async function cpAddContact(){
+  const input=document.getElementById('cp-add-input');
+  const name=input.value.trim();if(!name)return;
+  const{error}=await supa.from('contacts').insert({name,handle:name});
+  if(error){console.error('[SR contacts]',error.code||'ADD_ERR');return;}
+  input.value='';loadPinnedContacts();
+}
+async function cpDeleteContact(id){
+  await supa.from('contacts').delete().eq('id',id);loadPinnedContacts();
+}
+function renderContacts(){
+  const onlineEl=document.getElementById('cp-online');
+  const onlineList=Object.values(onlineUsers).filter(u=>u.vcId!==vcId);
+  if(!onlineList.length){onlineEl.innerHTML=`<div style="font-family:var(--mono);font-size:10px;color:var(--text3);padding:8px 4px">No one online</div>`;}
+  else{
+    onlineEl.innerHTML='';
+    onlineList.forEach(u=>{
+      const row=document.createElement('div');row.className='contact-row';
+      row.innerHTML=`<div class="contact-avatar online">${esc(u.name[0]||'?')}</div><div class="contact-info"><div class="contact-name">${esc(u.name)}</div><div class="contact-status online">● Online</div></div><div class="contact-btns"><button class="cbt call" onclick="vcCallUser('${esc(u.vcId)}','${esc(u.name)}')">📞</button></div>`;
+      onlineEl.appendChild(row);
+    });
+  }
+  const pinnedEl=document.getElementById('cp-pinned');
+  if(!pinnedContacts.length){pinnedEl.innerHTML=`<div style="font-family:var(--mono);font-size:10px;color:var(--text3);padding:8px 4px">No pinned contacts</div>`;}
+  else{
+    pinnedEl.innerHTML='';
+    pinnedContacts.forEach(c=>{
+      const online=Object.values(onlineUsers).find(u=>u.name.toLowerCase()===c.name.toLowerCase()&&u.vcId!==vcId);
+      const row=document.createElement('div');row.className='contact-row';
+      row.innerHTML=`<div class="contact-avatar${online?' online':''}">${esc(c.name[0]||'?')}</div><div class="contact-info"><div class="contact-name">${esc(c.name)}</div><div class="contact-status${online?' online':''}">${online?'● Online':'○ Offline'}</div></div><div class="contact-btns">${online?`<button class="cbt call" onclick="vcCallUser('${esc(online.vcId)}','${esc(c.name)}')">📞</button>`:''}<button class="cbt del" onclick="cpDeleteContact('${esc(c.id)}')">🗑</button></div>`;
+      pinnedEl.appendChild(row);
+    });
+  }
+}
+
+// ── WEBRTC ────────────────────────────────────────────────────────
+const VC_STUN={iceServers:[{urls:'stun:stun.l.google.com:19302'},{urls:'stun:stun1.l.google.com:19302'}]};
+const vcId=crypto.randomUUID();
+let vcName='',vcStream=null,vcLive=false,vcChannel=null,vcPresence=null;
+const vcPeers={};
+let pendingCall=null,callTimer=null,vcPendingTarget=null;
+
+function vcCancelModal(){document.getElementById('vc-modal').classList.remove('show');}
+function vcConfirmName(){
+  const n=(document.getElementById('vc-name-input')?.value||'').trim();
+  if(!n){document.getElementById('vc-name-err').textContent='Enter a name';return;}
+  vcName=n;sessionStorage.setItem('vc_name',n);
+  document.getElementById('vc-modal').classList.remove('show');
+  vcGoLive();
+}
+function vcCallUser(targetId,targetName){
+  if(!vcLive){
+    vcPendingTarget={vcId:targetId,name:targetName};
+    const saved=sessionStorage.getItem('vc_name');
+    if(saved){vcName=saved;vcGoLive();return;}
+    document.getElementById('vc-name-input').value='';
+    document.getElementById('vc-name-err').textContent='';
+    document.getElementById('vc-modal').classList.add('show');
+    setTimeout(()=>document.getElementById('vc-name-input').focus(),100);
+  }else{vcInitiateCall(targetId,targetName);}
+}
+async function vcGoLive(){
+  try{
+    const stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'user',width:{ideal:640},height:{ideal:480}},audio:true});
+    vcStream=stream;vcLive=true;
+    vcAddLocalWindow(stream);vcInitChannel();vcJoinPresence();
+    if(vcPendingTarget){const t=vcPendingTarget;vcPendingTarget=null;setTimeout(()=>vcInitiateCall(t.vcId,t.name),500);}
+  }catch(err){alert('Camera/mic access denied: '+err.message);vcPendingTarget=null;}
+}
+function vcHangup(){
+  vcLive=false;
+  if(vcStream){vcStream.getTracks().forEach(t=>t.stop());vcStream=null;}
+  Object.values(vcPeers).forEach(({pc})=>pc.close());
+  for(const k in vcPeers)delete vcPeers[k];
+  document.getElementById('vc-windows').innerHTML='';
+  if(vcChannel)vcChannel.send({type:'broadcast',event:'vc',payload:{type:'leave',from:vcId}});
+  if(vcPresence)vcPresence.unsubscribe();
+}
+function vcAddLocalWindow(stream){
+  const win=vcMakeWindow(vcId,vcName,true);
+  win.querySelector('video').srcObject=stream;win.querySelector('video').muted=true;win.querySelector('video').play().catch(()=>{});
+  document.getElementById('vc-windows').prepend(win);
+}
+function vcMakeWindow(id,name,isLocal){
+  const win=document.createElement('div');win.className='vc-win'+(isLocal?' local':'');win.id='vc-win-'+id;
+  win.innerHTML=`
+    <div class="vc-topbar"><div class="vc-name">${esc(name)}</div><div class="vc-btns">
+      ${isLocal?`<button class="vc-ico" id="vc-mic-${id}" onclick="vcToggleMic()">🎙</button>`:`<button class="vc-ico" id="vc-vol-${id}" onclick="vcToggleVol('${id}')">🔊</button>`}
+      <button class="vc-ico" onclick="vcCloseWin('${id}')">✕</button></div></div>
+    <video class="vc-video" id="vc-vid-${id}" autoplay playsinline ${isLocal?'muted':''}></video>
+    <div class="vc-footer"><div class="vc-live-badge"><div class="vc-live-dot"></div>LIVE</div><div class="vc-namelabel">${esc(name)}</div></div>`;
+  vcMakeDraggable(win);return win;
+}
+function vcCloseWin(id){const el=document.getElementById('vc-win-'+id);if(el)el.remove();if(id===vcId)vcHangup();}
+function vcToggleMic(){if(!vcStream)return;const t=vcStream.getAudioTracks()[0];if(!t)return;t.enabled=!t.enabled;const btn=document.getElementById('vc-mic-'+vcId);if(btn){btn.textContent=t.enabled?'🎙':'🔇';btn.classList.toggle('muted',!t.enabled);}}
+function vcToggleVol(id){const vid=document.getElementById('vc-vid-'+id);if(!vid)return;vid.muted=!vid.muted;const btn=document.getElementById('vc-vol-'+id);if(btn){btn.textContent=vid.muted?'🔇':'🔊';btn.classList.toggle('muted',vid.muted);}}
+function vcMakeDraggable(el){
+  let ox=0,oy=0,sx=0,sy=0,drag=false;
+  const bar=el.querySelector('.vc-topbar');
+  const dn=(cx,cy)=>{drag=true;sx=cx;sy=cy;const r=el.getBoundingClientRect();ox=r.left;oy=r.top;el.style.position='fixed';el.style.margin='0';};
+  bar.addEventListener('mousedown',e=>{e.preventDefault();dn(e.clientX,e.clientY);});
+  bar.addEventListener('touchstart',e=>{const t=e.touches[0];dn(t.clientX,t.clientY);},{passive:true});
+  document.addEventListener('mousemove',e=>{if(!drag)return;el.style.left=(ox+e.clientX-sx)+'px';el.style.top=(oy+e.clientY-sy)+'px';});
+  document.addEventListener('touchmove',e=>{if(!drag)return;const t=e.touches[0];el.style.left=(ox+t.clientX-sx)+'px';el.style.top=(oy+t.clientY-sy)+'px';},{passive:true});
+  document.addEventListener('mouseup',()=>drag=false);document.addEventListener('touchend',()=>drag=false);
+}
+function vcInitChannel(){
+  if(vcChannel)return;
+  vcChannel=supa.channel('vc-room',{config:{broadcast:{self:false}}});
+  vcChannel.on('broadcast',{event:'vc'},async({payload})=>{
+    const{type,from,to,data,name}=payload;
+    if(to&&to!==vcId)return;
+    if(type==='offer')vcShowCallBanner(from,name,data);
+    else if(type==='answer')await vcHandleAnswer(from,data);
+    else if(type==='ice')await vcHandleIce(from,data);
+    else if(type==='leave')vcRemovePeer(from);
+  }).subscribe();
+}
+function vcJoinPresence(){
+  vcPresence=supa.channel('vc-presence');
+  vcPresence.on('presence',{event:'sync'},()=>{
+    const state=vcPresence.presenceState();onlineUsers={};
+    Object.values(state).flat().forEach(u=>{if(u.vcId&&u.name)onlineUsers[u.vcId]={vcId:u.vcId,name:u.name};});
+    if(contactsOpen)renderContacts();
+  }).subscribe(async status=>{if(status==='SUBSCRIBED')await vcPresence.track({vcId,name:vcName});});
+}
+function vcSend(payload){vcChannel?.send({type:'broadcast',event:'vc',payload});}
+async function vcInitiateCall(targetId,targetName){
+  const pc=vcCreatePC(targetId,targetName);
+  const offer=await pc.createOffer();
+  await pc.setLocalDescription(offer);
+  vcSend({type:'offer',from:vcId,to:targetId,name:vcName,data:offer});
+}
+function vcShowCallBanner(peerId,peerName,offer){
+  pendingCall={peerId,peerName,offer};
+  document.getElementById('call-caller-name').textContent=peerName;
+  document.getElementById('call-banner').classList.add('show');
+  clearTimeout(callTimer);callTimer=setTimeout(()=>vcDeclineCall(),30000);
+}
+function vcAnswerCall(){
+  clearTimeout(callTimer);document.getElementById('call-banner').classList.remove('show');
+  if(!pendingCall)return;const{peerId,peerName,offer}=pendingCall;pendingCall=null;vcAnswerOffer(peerId,peerName,offer);
+}
+function vcDeclineCall(){clearTimeout(callTimer);document.getElementById('call-banner').classList.remove('show');pendingCall=null;}
+async function vcAnswerOffer(peerId,peerName,offer){
+  if(!vcStream){
+    try{vcStream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'user'},audio:true});vcLive=true;vcAddLocalWindow(vcStream);vcInitChannel();vcJoinPresence();}catch(e){}
+  }
+  const pc=vcCreatePC(peerId,peerName);
+  await pc.setRemoteDescription(new RTCSessionDescription(offer));
+  if(vcStream)vcStream.getTracks().forEach(t=>pc.addTrack(t,vcStream));
+  const answer=await pc.createAnswer();
+  await pc.setLocalDescription(answer);
+  vcSend({type:'answer',from:vcId,to:peerId,data:answer});
+}
+async function vcHandleAnswer(peerId,answer){const peer=vcPeers[peerId];if(!peer)return;if(peer.pc.signalingState==='have-local-offer')await peer.pc.setRemoteDescription(new RTCSessionDescription(answer));}
+async function vcHandleIce(peerId,candidate){const peer=vcPeers[peerId];if(!peer||!candidate)return;try{await peer.pc.addIceCandidate(new RTCIceCandidate(candidate));}catch(e){}}
+function vcRemovePeer(peerId){if(vcPeers[peerId]){vcPeers[peerId].pc.close();delete vcPeers[peerId];}const win=document.getElementById('vc-win-'+peerId);if(win)win.remove();if(contactsOpen)renderContacts();}
+function vcCreatePC(peerId,peerName){
+  const pc=new RTCPeerConnection(VC_STUN);vcPeers[peerId]={pc,name:peerName};
+  if(vcStream)vcStream.getTracks().forEach(t=>pc.addTrack(t,vcStream));
+  pc.onicecandidate=e=>{if(e.candidate)vcSend({type:'ice',from:vcId,to:peerId,data:e.candidate});};
+  pc.ontrack=e=>{
+    if(!document.getElementById('vc-win-'+peerId))document.getElementById('vc-windows').appendChild(vcMakeWindow(peerId,peerName,false));
+    const vid=document.getElementById('vc-vid-'+peerId);
+    if(vid&&e.streams[0]){vid.srcObject=e.streams[0];vid.play().catch(()=>{});}
+  };
+  pc.onconnectionstatechange=()=>{if(['disconnected','failed','closed'].includes(pc.connectionState))vcRemovePeer(peerId);};
+  return pc;
+}
+
+// ── UTILS ─────────────────────────────────────────────────────────
+// ── CHIME ─────────────────────────────────────────────────────────
+let chimeEnabled=true;
+let audioCtx=null;
+function getAudioCtx(){
+  if(!audioCtx)audioCtx=new(window.AudioContext||window.webkitAudioContext)();
+  return audioCtx;
+}
+function playChime(){
+  if(!chimeEnabled)return;
+  try{
+    const ctx=getAudioCtx();
+    // Two-tone ascending chime — C5 then E5
+    [[523.25,0],[659.25,0.18]].forEach(([freq,delay])=>{
+      const osc=ctx.createOscillator();
+      const gain=ctx.createGain();
+      osc.connect(gain);gain.connect(ctx.destination);
+      osc.type='sine';osc.frequency.value=freq;
+      const t=ctx.currentTime+delay;
+      gain.gain.setValueAtTime(0,t);
+      gain.gain.linearRampToValueAtTime(0.25,t+0.02);
+      gain.gain.exponentialRampToValueAtTime(0.001,t+0.6);
+      osc.start(t);osc.stop(t+0.65);
+    });
+  }catch(e){}
+}
+function toggleChime(){
+  chimeEnabled=!chimeEnabled;
+  const btn=document.getElementById('chime-btn');
+  if(btn){btn.textContent=chimeEnabled?'🔔':'🔕';btn.title=chimeEnabled?'Mute chime':'Unmute chime';}
+}
+
+function goTab(t){
+  document.querySelectorAll('.view').forEach(v=>v.classList.remove('on'));
+  document.querySelectorAll('.tab').forEach(b=>b.classList.remove('on'));
+  document.getElementById(t==='s'?'sv':'rv').classList.add('on');
+  document.querySelectorAll('.tab')[t==='s'?0:1].classList.add('on');
+  setTimeout(()=>{(t==='s'?smap:rmap).invalidateSize();},80);
+  if(t==='r')loadReports();
+}
+function setConn(type,txt){document.getElementById('conn-dot').className=type;document.getElementById('conn-txt').textContent=txt;}
+function setMsg(msg,type){const el=document.getElementById('txmsg');el.textContent=msg;el.style.color=type==='err'?'#ef4444':type==='ok'?'#22c55e':'#7a91a8';}
+function timeAgo(d){
+  if(!d||isNaN(d.getTime()))return'just now';
+  const s=Math.floor((Date.now()-d)/1000);
+  if(s<60)return`${s}s ago`;if(s<3600)return`${Math.floor(s/60)}m ago`;
+  if(s<86400)return`${Math.floor(s/3600)}h ago`;return d.toLocaleDateString();
+}
+function esc(str){return String(str||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function shake(el){el.classList.remove('shake');void el.offsetWidth;el.classList.add('shake');setTimeout(()=>el.classList.remove('shake'),400);}
+
+// ── INIT ──────────────────────────────────────────────────────────
+loadReports();
+subscribeRealtime();
+
+</script>
+</body>
+</html>

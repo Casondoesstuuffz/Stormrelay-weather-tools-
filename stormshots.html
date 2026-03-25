@@ -1,0 +1,1054 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Submit your storm photos — they appear on participating channels instantly.">
+  <meta property="og:title" content="StormShots — Submit a Storm Photo">
+  <meta property="og:description" content="Share your storm photos. They appear live on participating channels instantly.">
+  <meta http-equiv="Content-Security-Policy" content="
+    default-src 'self';
+    script-src 'self' 'unsafe-inline' cdn.jsdelivr.net;
+    style-src 'self' 'unsafe-inline' fonts.googleapis.com;
+    font-src fonts.gstatic.com;
+    connect-src *.supabase.co;
+    img-src * data: blob:;
+    worker-src blob:;
+  ">
+  <title>StormShots — Submit a Storm Photo</title>
+  <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800;900&family=Share+Tech+Mono&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    :root{
+      --bg:#07090e;--surf:#0c1018;--panel:#111620;--panel2:#17202e;
+      --border:#1c2535;--border2:#273347;
+      --amber:#f59e0b;--amber2:#fbbf24;--amberDim:rgba(245,158,11,.1);
+      --red:#ef4444;--green:#22c55e;--cyan:#22d3ee;
+      --text:#dce8f5;--text2:#7a91a8;--text3:#3a4f64;
+      --mono:'Share Tech Mono',monospace;
+      --disp:'Barlow Condensed',sans-serif;
+      --body:'Barlow',sans-serif;
+    }
+    *,*::before,*::after{margin:0;padding:0;box-sizing:border-box;}
+    html,body{min-height:100%;background:var(--bg);color:var(--text);font-family:var(--body);}
+
+    /* ── TOPBAR ── */
+    #topbar{
+      height:52px;display:flex;align-items:center;padding:0 20px;gap:12px;
+      background:var(--surf);border-bottom:1px solid var(--border);
+      position:sticky;top:0;z-index:100;
+    }
+    .logo{font-family:var(--disp);font-size:20px;font-weight:900;letter-spacing:3px;text-transform:uppercase;color:var(--amber);}
+    .logo-tag{font-family:var(--mono);font-size:9px;color:var(--text3);letter-spacing:1px;}
+
+    /* ── PAGE ── */
+    #page{max-width:520px;margin:0 auto;padding:32px 20px 80px;display:flex;flex-direction:column;gap:24px;}
+
+    /* ── HERO ── */
+    #hero h1{font-family:var(--disp);font-size:34px;font-weight:900;letter-spacing:2px;text-transform:uppercase;line-height:1.05;}
+    #hero h1 span{color:var(--amber);}
+    #hero p{font-family:var(--mono);font-size:11px;color:var(--text3);line-height:1.8;margin-top:8px;}
+
+    /* ── CARD ── */
+    .card{background:var(--surf);border:1px solid var(--border);border-radius:10px;padding:20px;display:flex;flex-direction:column;gap:16px;}
+
+    /* ── DROP ZONE ── */
+    #dropzone{
+      border:2px dashed var(--border2);border-radius:8px;
+      background:var(--panel);cursor:pointer;
+      transition:all .2s;position:relative;
+      display:flex;flex-direction:column;align-items:center;
+      justify-content:center;gap:10px;padding:36px 20px;
+      text-align:center;min-height:160px;
+    }
+    #dropzone.drag{border-color:var(--amber);background:var(--amberDim);}
+    #dropzone.has{padding:0;border-style:solid;}
+    #dropzone input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%;}
+    #dz-icon{font-size:40px;line-height:1;}
+    #dz-label{font-family:var(--disp);font-size:14px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--text2);}
+    #dz-sub{font-family:var(--mono);font-size:10px;color:var(--text3);line-height:1.7;}
+    #preview{width:100%;max-height:300px;object-fit:contain;border-radius:6px;display:none;}
+    #dz-remove{
+      display:none;width:100%;padding:7px;
+      background:none;border:none;border-top:1px solid var(--border);
+      font-family:var(--mono);font-size:10px;color:var(--text3);
+      cursor:pointer;transition:color .12s;
+    }
+    #dz-remove:hover{color:var(--red);}
+
+    /* ── INPUTS ── */
+    .fg{display:flex;flex-direction:column;gap:5px;}
+    .fl{font-family:var(--disp);font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--text2);}
+    .fl em{color:var(--text3);font-style:normal;font-weight:400;}
+    .fi{
+      background:var(--panel2);border:1px solid var(--border2);border-radius:6px;
+      padding:10px 13px;color:var(--text);font-family:var(--body);font-size:14px;
+      outline:none;transition:border-color .15s;width:100%;
+    }
+    .fi:focus{border-color:var(--amber);}
+    .fi::placeholder{color:var(--text3);}
+    textarea.fi{resize:vertical;min-height:80px;line-height:1.5;}
+    .char-count{font-family:var(--mono);font-size:9px;color:var(--text3);text-align:right;margin-top:-2px;}
+
+    /* ── SEV GRID ── */
+    #sev-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(70px,1fr));gap:5px;}
+    .sb{
+      padding:6px 2px;border-radius:5px;border:1px solid var(--border2);
+      background:var(--panel);color:var(--text2);
+      font-family:var(--disp);font-size:11px;font-weight:700;letter-spacing:.5px;
+      cursor:pointer;text-align:center;transition:all .12s;
+    }
+    .sb:hover{border-color:var(--border2);color:var(--text);}
+    .sb.on{border-color:transparent;}
+
+    /* ── GPS STRIP ── */
+    #gps-strip{
+      display:flex;align-items:center;gap:8px;padding:8px 12px;
+      background:var(--panel);border:1px solid var(--border);border-radius:6px;
+    }
+    #gps-icon{font-size:14px;}
+    #gps-label{font-family:var(--mono);font-size:10px;color:var(--text3);flex:1;}
+    #gps-label.ok{color:var(--cyan);}
+    #gps-btn{
+      padding:4px 10px;border-radius:4px;border:1px solid var(--border2);
+      background:transparent;color:var(--text2);font-family:var(--mono);
+      font-size:10px;cursor:pointer;transition:all .12s;flex-shrink:0;
+    }
+    #gps-btn:hover{border-color:var(--cyan);color:var(--cyan);}
+
+    /* ── EXIF STRIP ── */
+    .exif-strip{
+      display:flex;align-items:flex-start;gap:8px;padding:8px 11px;
+      border-radius:5px;font-family:var(--mono);font-size:10px;line-height:1.6;
+    }
+    .exif-strip.found{background:rgba(34,197,94,.07);border:1px solid rgba(34,197,94,.22);color:#6ee7b7;}
+    .exif-strip.none{background:rgba(245,158,11,.07);border:1px solid rgba(245,158,11,.22);color:#fcd34d;}
+    .exif-strip.mismatch{background:rgba(239,68,68,.07);border:1px solid rgba(239,68,68,.25);color:#fca5a5;}
+    .exif-strip-icon{flex-shrink:0;font-size:13px;}
+
+    /* ── CHANNEL PICKER ── */
+    #channel-grid{display:flex;flex-wrap:wrap;gap:5px;}
+    .chb{
+      padding:6px 12px;border-radius:5px;border:1px solid var(--border2);
+      background:var(--panel);color:var(--text2);
+      font-family:var(--disp);font-size:11px;font-weight:700;letter-spacing:.5px;
+      cursor:pointer;transition:all .12s;white-space:nowrap;
+    }
+    .chb:hover{border-color:var(--cyan);color:var(--text);}
+    .chb.on{border-color:var(--cyan);color:#000;background:var(--cyan);}
+
+    .sub-field{border-left:2px solid var(--border2);padding-left:12px;margin-left:4px;animation:subfadein .18s ease-out;}
+    @keyframes subfadein{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:translateY(0)}}
+    .sub-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+    .sub-unit{font-family:var(--mono);font-size:11px;color:var(--text3);flex-shrink:0;}
+    .me-toggle{display:flex;gap:4px;flex-shrink:0;}
+    .me-btn{
+      padding:6px 10px;border-radius:5px;border:1px solid var(--border2);
+      background:var(--panel);color:var(--text2);font-family:var(--mono);
+      font-size:10px;cursor:pointer;transition:all .12s;white-space:nowrap;
+    }
+    .me-btn:hover{border-color:var(--amber);color:var(--text);}
+    .me-btn.on{border-color:var(--amber);color:#000;background:var(--amber);}
+
+    /* ── CONTRIBUTOR NOTICE ── */
+    #contrib-notice{
+      background:rgba(122,145,168,.06);
+      border:1px solid rgba(122,145,168,.18);
+      border-radius:6px;padding:12px 14px;
+      display:flex;flex-direction:column;gap:6px;
+    }
+    #contrib-title{
+      font-family:var(--disp);font-size:11px;font-weight:700;
+      letter-spacing:1.5px;text-transform:uppercase;color:var(--text2);
+    }
+    #contrib-body{
+      font-family:var(--body);font-size:12px;color:var(--text3);
+      line-height:1.8;
+    }
+    #contrib-body strong{color:var(--text2);}
+
+    /* ── 48HR NOTICE ── */
+    #window-notice{
+      display:flex;align-items:flex-start;gap:9px;
+      padding:10px 13px;
+      background:rgba(245,158,11,.07);
+      border:1px solid rgba(245,158,11,.25);
+      border-radius:6px;
+      font-family:var(--mono);font-size:10px;color:var(--text2);
+      line-height:1.7;
+    }
+    #window-notice span:first-child{flex-shrink:0;font-size:14px;}
+    #window-notice strong{color:var(--amber);}
+
+    /* ── PROGRESS ── */
+    #progwrap{display:none;flex-direction:column;gap:5px;}
+    #progbar{height:4px;background:var(--border);border-radius:2px;overflow:hidden;}
+    #progfill{height:100%;background:var(--amber);width:0%;transition:width .3s;}
+    #prog-label{font-family:var(--mono);font-size:10px;color:var(--text2);text-align:center;}
+
+    /* ── STATUS ── */
+    #status{font-family:var(--mono);font-size:11px;text-align:center;min-height:14px;}
+
+    /* ── SUBMIT ── */
+    #submit-btn{
+      width:100%;padding:14px;background:var(--amber);border:none;border-radius:7px;
+      color:#000;font-family:var(--disp);font-size:15px;font-weight:900;
+      letter-spacing:2px;text-transform:uppercase;cursor:pointer;transition:all .15s;
+    }
+    #submit-btn:hover{background:var(--amber2);}
+    #submit-btn:disabled{opacity:.4;cursor:not-allowed;}
+
+    /* ── SUCCESS ── */
+    #success-card{
+      display:none;background:var(--surf);border:1px solid rgba(34,197,94,.25);
+      border-radius:10px;padding:40px 20px;text-align:center;
+      flex-direction:column;align-items:center;gap:14px;
+    }
+    #success-card.show{display:flex;}
+    .success-icon{font-size:52px;}
+    .success-title{font-family:var(--disp);font-size:24px;font-weight:900;letter-spacing:2px;text-transform:uppercase;color:var(--green);}
+    .success-sub{font-family:var(--mono);font-size:10px;color:var(--text3);line-height:1.8;max-width:300px;}
+    #submit-another{
+      padding:10px 24px;border-radius:6px;background:transparent;
+      border:1px solid var(--border2);color:var(--text2);
+      font-family:var(--disp);font-size:12px;font-weight:700;letter-spacing:1px;
+      cursor:pointer;transition:all .15s;
+    }
+    #submit-another:hover{border-color:var(--amber);color:var(--amber);}
+
+    /* ── FOOTER ── */
+    #footer{font-family:var(--mono);font-size:9px;color:var(--text3);text-align:center;line-height:1.8;}
+    #footer a{color:var(--text3);}
+    .creators-link{
+      background:none;border:none;padding:0;
+      font-family:var(--mono);font-size:9px;color:var(--amber);
+      cursor:pointer;text-decoration:underline;text-underline-offset:2px;
+    }
+    .creators-link:hover{color:var(--amber2);}
+
+    /* ── CREATORS DRAWER ── */
+    #creators-overlay{
+      display:none;position:fixed;inset:0;
+      background:rgba(0,0,0,.55);z-index:1000;
+      backdrop-filter:blur(4px);
+    }
+    #creators-overlay.show{display:block;}
+    #creators-drawer{
+      position:fixed;bottom:0;left:0;right:0;
+      z-index:1001;
+      background:var(--surf);border-top:1px solid var(--border2);
+      border-radius:14px 14px 0 0;
+      transform:translateY(100%);
+      transition:transform .28s cubic-bezier(.32,.72,0,1);
+      max-height:70vh;display:flex;flex-direction:column;
+    }
+    #creators-drawer.show{transform:translateY(0);}
+    #creators-header{
+      display:flex;align-items:center;justify-content:space-between;
+      padding:14px 18px 10px;border-bottom:1px solid var(--border);flex-shrink:0;
+    }
+    #creators-title{
+      font-family:var(--disp);font-size:14px;font-weight:800;
+      letter-spacing:1.5px;text-transform:uppercase;color:var(--text);
+    }
+    #creators-close{
+      background:none;border:none;color:var(--text2);font-size:18px;
+      cursor:pointer;padding:2px 6px;transition:color .12s;
+    }
+    #creators-close:hover{color:var(--red);}
+    #creators-body{
+      overflow-y:auto;-webkit-overflow-scrolling:touch;
+      padding:12px 16px 28px;display:flex;flex-direction:column;gap:10px;
+    }
+    .creator-row{
+      display:flex;align-items:center;gap:12px;
+      padding:10px 12px;background:var(--panel);
+      border:1px solid var(--border);border-radius:8px;
+      text-decoration:none;color:inherit;
+      transition:border-color .15s,background .15s;
+    }
+    a.creator-row:hover{border-color:var(--amber);background:rgba(245,158,11,.04);}
+    .creator-yt{margin-left:auto;font-size:10px;color:var(--text3);flex-shrink:0;font-family:var(--mono);}
+    a.creator-row:hover .creator-yt{color:var(--amber);}
+    .creator-avatar{
+      width:40px;height:40px;border-radius:50%;flex-shrink:0;
+      background:var(--panel2);border:1px solid var(--border2);
+      display:flex;align-items:center;justify-content:center;
+      font-family:var(--disp);font-size:16px;font-weight:900;
+      color:var(--text3);overflow:hidden;
+    }
+    .creator-avatar img{width:100%;height:100%;object-fit:cover;display:block;}
+    .creator-avatar-tba{opacity:.5;}
+    .creator-info{display:flex;flex-direction:column;gap:2px;min-width:0;}
+    .creator-name{
+      font-family:var(--disp);font-size:15px;font-weight:800;
+      color:var(--text);letter-spacing:.5px;
+    }
+    .creator-handle{font-family:var(--mono);font-size:10px;color:var(--text3);}
+    .creator-handle a{color:var(--amber);text-decoration:none;}
+    .creator-handle a:hover{text-decoration:underline;}
+    #creators-notice{
+      font-family:var(--mono);font-size:9px;color:var(--text3);
+      text-align:center;line-height:1.7;padding:6px 4px 0;
+    }
+  </style>
+</head>
+<body>
+
+<div id="topbar">
+  <div>
+    <div class="logo">StormShots</div>
+    <div class="logo-tag">BY CASONWX</div>
+  </div>
+</div>
+
+<div id="page">
+
+  <div id="hero">
+    <h1>Share your<br><span>storm photo.</span></h1>
+    <p>Photos submitted here appear instantly<br>on participating channels.</p>
+  </div>
+
+  <div class="card" id="form-card">
+
+    <!-- PHOTO -->
+    <div class="fg">
+      <div class="fl">Photo <em>· required</em></div>
+      <div id="dropzone"
+           ondragover="dzDrag(event,true)"
+           ondragleave="dzDrag(event,false)"
+           ondrop="dzDrop(event)">
+        <input type="file" id="phinput" accept="image/*" onchange="onFile(event)">
+        <div id="dz-icon">📷</div>
+        <div id="dz-label">Tap to select a photo</div>
+        <div id="dz-sub">or drag and drop · JPG PNG HEIC WEBP · max 15MB</div>
+        <img id="preview" alt="Preview">
+        <button id="dz-remove" type="button" onclick="removePhoto(event)">✕ Remove photo</button>
+      </div>
+    </div>
+
+    <!-- NAME -->
+    <div class="fg">
+      <div class="fl">Your Name or Handle <em>· required</em></div>
+      <input class="fi" id="iname" type="text" placeholder="e.g. StormChaser99, Jane Smith…" maxlength="40" autocomplete="name">
+    </div>
+
+    <!-- CAPTION -->
+    <div class="fg">
+      <div class="fl">Caption <em>· optional</em></div>
+      <textarea class="fi" id="icaption"
+        placeholder="What are you seeing? Location, notes, storm details…"
+        maxlength="280" oninput="updateCount()"></textarea>
+      <div class="char-count"><span id="char-used">0</span> / 280</div>
+    </div>
+
+    <!-- EVENT TYPE -->
+    <div class="fg">
+      <div class="fl">Event Type <em>· optional</em></div>
+      <div id="sev-grid"></div>
+    </div>
+
+    <!-- CLOUD FEATURE -->
+    <div class="fg">
+      <div class="fl">Cloud Feature <em>· optional</em></div>
+      <div id="cloud-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:5px;"></div>
+    </div>
+
+    <!-- DAMAGE TAG -->
+    <div class="fg">
+      <div class="fl">Damage Tag <em>· post-event EF rating · optional</em></div>
+      <div id="damage-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(60px,1fr));gap:5px;"></div>
+    </div>
+
+    <!-- INTENDED CHANNEL -->
+    <div class="fg">
+      <div class="fl">Intended For <em>· optional</em></div>
+      <div id="channel-grid">
+        <!--
+          🔧 CUSTOMIZE: Add a button for each of your channels.
+          The data-ch value must match the channel name used in
+          StormRelay's intended_channel filter.
+          Example:
+          <button type="button" class="chb" data-ch="MyChannel" onclick="pickChannel('MyChannel',this)">My Channel</button>
+        -->
+        <button type="button" class="chb on" data-ch="all" onclick="pickChannel('all',this)">📡 All Channels</button>
+        <!-- Add your channel buttons here -->
+      </div>
+      <div style="font-family:var(--mono);font-size:10px;color:var(--text3);margin-top:5px;line-height:1.6;">
+        All channels always see every photo — this is just a label so they know who it was sent for.
+      </div>
+    </div>
+
+    <!-- SNOW DEPTH (shown when Snow selected) -->
+    <div class="fg sub-field" id="snow-field" style="display:none">
+      <div class="fl">Snow Depth <em>· optional</em></div>
+      <div class="sub-row">
+        <input class="fi" id="isnow" type="number" min="0" max="120" step="0.1"
+               placeholder="e.g. 4.5" style="width:100px;flex-shrink:0">
+        <span class="sub-unit">inches</span>
+        <div class="me-toggle">
+          <button type="button" class="me-btn" id="snow-measured" onclick="setME('snow','measured')">📏 Measured</button>
+          <button type="button" class="me-btn" id="snow-estimated" onclick="setME('snow','estimated')">👁 Estimated</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- HAIL SIZE (shown when Hail selected) -->
+    <div class="fg sub-field" id="hail-field" style="display:none">
+      <div class="fl">Hail Size <em>· optional</em></div>
+      <div class="sub-row">
+        <input class="fi" id="ihail" type="number" min="0" max="10" step="0.25"
+               placeholder="e.g. 1.75" style="width:100px;flex-shrink:0">
+        <span class="sub-unit">inches</span>
+        <div class="me-toggle">
+          <button type="button" class="me-btn" id="hail-measured" onclick="setME('hail','measured')">📏 Measured</button>
+          <button type="button" class="me-btn" id="hail-estimated" onclick="setME('hail','estimated')">👁 Estimated</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- WIND SPEED (shown when Wind selected) -->
+    <div class="fg sub-field" id="wind-field" style="display:none">
+      <div class="fl">Wind Speed <em>· optional</em></div>
+      <div class="sub-row">
+        <input class="fi" id="iwind" type="number" min="0" max="300" step="1"
+               placeholder="e.g. 65" style="width:100px;flex-shrink:0">
+        <span class="sub-unit">mph</span>
+        <div class="me-toggle">
+          <button type="button" class="me-btn" id="wind-measured" onclick="setME('wind','measured')">📏 Measured</button>
+          <button type="button" class="me-btn" id="wind-estimated" onclick="setME('wind','estimated')">👁 Estimated</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- GPS -->
+    <div class="fg">
+      <div class="fl">Location <em>· optional</em></div>
+      <div id="gps-strip">
+        <div id="gps-icon">📍</div>
+        <div id="gps-label">No location attached</div>
+        <button id="gps-btn" type="button" onclick="getGPS()">Use my location</button>
+      </div>
+    </div>
+
+    <!-- TIME TAKEN -->
+    <div class="fg">
+      <div class="fl">Time Photo Was Taken <em>· optional</em></div>
+      <input class="fi" id="itime" type="datetime-local">
+      <div id="time-warning" style="display:none;font-family:var(--mono);font-size:10px;color:var(--red);margin-top:4px;">
+        ⚠ This photo is outside the 48-hour window and will not be accepted.
+      </div>
+      <!-- EXIF status — shown after file is selected -->
+      <div id="exif-strip" style="display:none;margin-top:6px;"></div>
+    </div>
+
+    <!-- 48HR NOTICE -->
+    <div id="window-notice">
+      <span>🕐</span>
+      <span>Only photos taken within the last <strong>48 hours</strong> will be accepted on participating channels.</span>
+    </div>
+
+    <!-- CONTRIBUTOR NOTICE -->
+    <div id="contrib-notice">
+      <div id="contrib-title">📋 Before you submit</div>
+      <div id="contrib-body">
+        When you upload a photo here, you're sharing it with all participating channels. <strong>Those channels can repost or use your photo — with or without giving you credit.</strong> You still own your photo and that doesn't change, but by hitting submit you're giving participating channels the green light to use it however they want.<br><br>
+        If your photo has copyrighted content in it, or if it's not actually your photo to share, <strong>that's your responsibility — not ours.</strong> Don't upload someone else's work without their permission.
+      </div>
+    </div>
+
+    <!-- PROGRESS -->
+    <div id="progwrap">
+      <div id="progbar"><div id="progfill"></div></div>
+      <div id="prog-label">Uploading…</div>
+    </div>
+
+    <div id="status"></div>
+
+    <button id="submit-btn" type="button" onclick="submitPhoto()">📤 I agree — Submit Photo</button>
+
+  </div>
+
+  <!-- SUCCESS -->
+  <div id="success-card">
+    <div class="success-icon">✅</div>
+    <div class="success-title">Photo submitted!</div>
+    <div class="success-sub">
+      Your photo is now live.<br>
+      It will appear on all participating channels immediately.
+    </div>
+    <button id="submit-another" type="button" onclick="resetForm()">Submit another photo</button>
+  </div>
+
+  <div id="footer">
+    Your photos appear on <button class="creators-link" onclick="toggleCreators()">participating channels</button>.<br>
+    A project by <a href="#">Your Name</a> <!-- 🔧 Update this -->
+  </div>
+
+  <!-- PARTICIPATING CREATORS DRAWER -->
+  <div id="creators-drawer">
+    <div id="creators-header">
+      <div id="creators-title">📡 Participating Channels</div>
+      <button id="creators-close" onclick="toggleCreators()">✕</button>
+    </div>
+    <div id="creators-body">
+
+      <!--
+      ═══════════════════════════════════════════════════════════════
+      ADD YOUR CHANNELS HERE
+      ═══════════════════════════════════════════════════════════════
+
+      Copy and paste this block for each channel you want to list.
+      Replace the placeholder values with your own.
+
+      OPTION A — Avatar from URL (simpler):
+      ──────────────────────────────────────
+      <a class="creator-row" href="https://youtube.com/@YOURCHANNEL" target="_blank" rel="noopener">
+        <div class="creator-avatar">
+          <img src="YOUR_AVATAR_IMAGE_URL" alt="Channel Name"
+               onerror="this.style.display='none';this.parentElement.textContent='?'">
+        </div>
+        <div class="creator-info">
+          <div class="creator-name">Channel Name</div>
+          <div class="creator-handle">@handle</div>
+        </div>
+        <div class="creator-yt">▶ YT</div>
+      </a>
+
+      OPTION B — Embedded avatar (more reliable, no external dependency):
+      ────────────────────────────────────────────────────────────────
+      Resize your avatar to 80x80px and convert to base64 at:
+      https://www.base64-image.de/
+      Then replace YOUR_BASE64_HERE below.
+
+      <a class="creator-row" href="https://youtube.com/@YOURCHANNEL" target="_blank" rel="noopener">
+        <div class="creator-avatar">
+          <img src="data:image/jpeg;base64,YOUR_BASE64_HERE" alt="Channel Name">
+        </div>
+        <div class="creator-info">
+          <div class="creator-name">Channel Name</div>
+          <div class="creator-handle">@handle</div>
+        </div>
+        <div class="creator-yt">▶ YT</div>
+      </a>
+
+      TBA SLOT — remove or replace when you have more channels:
+      ──────────────────────────────────────────────────────────
+      <div class="creator-row">
+        <div class="creator-avatar creator-avatar-tba">?</div>
+        <div class="creator-info">
+          <div class="creator-name">TBA</div>
+          <div class="creator-handle">More channels coming soon</div>
+        </div>
+      </div>
+      ═══════════════════════════════════════════════════════════════
+      -->
+
+      <div id="creators-notice">
+        Add your participating channels above. Photos submitted here will appear on all channels in real time.
+      </div>
+    </div>
+  </div>
+
+  <!-- OVERLAY -->
+  <div id="creators-overlay" onclick="toggleCreators()"></div>
+
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.39.3/dist/umd/supabase.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/exifr@7.1.3/dist/lite.umd.js"></script>
+<script>
+// ── SUPABASE ──────────────────────────────────────────────────────
+const SUPA_URL='YOUR_SUPABASE_URL'; // 🔧 Replace with your Supabase project URL
+const SUPA_KEY='YOUR_SUPABASE_ANON_KEY'; // 🔧 Replace with your Supabase anon key
+if(typeof window.supabase==='undefined'){alert('Failed to load — check connection.');throw new Error('Supabase CDN failed');}
+const supa=window.supabase.createClient(SUPA_URL,SUPA_KEY);
+
+// ── SEVERITY ──────────────────────────────────────────────────────
+const SEVS=[
+  {id:'TORNADO',label:'Tornado',bg:'#dc2626',fg:'#fff'},
+  {id:'FUNNEL',label:'Funnel',bg:'#c084fc',fg:'#000'},
+  {id:'WALL',label:'Wall Cld',bg:'#a78bfa',fg:'#000'},
+  {id:'HAIL',label:'Hail',bg:'#22d3ee',fg:'#000'},
+  {id:'SNOW',label:'Snow',bg:'#bfdbfe',fg:'#1e3a5f'},
+  {id:'FLOOD',label:'Flood',bg:'#3b82f6',fg:'#fff'},
+  {id:'WIND',label:'Wind',bg:'#34d399',fg:'#000'},
+  {id:'DAMAGE',label:'Damage',bg:'#92400e',fg:'#fff'},
+  {id:'OTHER',label:'Other',bg:'#4b5563',fg:'#fff'},
+];
+const CLOUD_FEATURES=[
+  {id:'MESO',label:'Mesocyclone',bg:'#7c3aed',fg:'#fff'},
+  {id:'WALLCLOUD',label:'Wall Cloud',bg:'#a78bfa',fg:'#000'},
+  {id:'ROTWALLCLOUD',label:'Rot. Wall Cloud',bg:'#6d28d9',fg:'#fff'},
+  {id:'SHELFCLOUD',label:'Shelf Cloud',bg:'#0ea5e9',fg:'#fff'},
+  {id:'ANVIL',label:'Anvil',bg:'#475569',fg:'#fff'},
+  {id:'MAMMATUS',label:'Mammatus',bg:'#c084fc',fg:'#000'},
+  {id:'SCUD',label:'Scud',bg:'#334155',fg:'#fff'},
+  {id:'NOTABLECLOUD',label:'Notable Cloud',bg:'#1e40af',fg:'#fff'},
+];
+const DAMAGE_TAGS=[
+  {id:'EF0',label:'EF0',bg:'#fde68a',fg:'#000'},{id:'EF1',label:'EF1',bg:'#fbbf24',fg:'#000'},
+  {id:'EF2',label:'EF2',bg:'#f97316',fg:'#000'},{id:'EF3',label:'EF3',bg:'#ef4444',fg:'#fff'},
+  {id:'EF4',label:'EF4',bg:'#dc2626',fg:'#fff'},{id:'EF5',label:'EF5+',bg:'#7f1d1d',fg:'#fff'},
+  {id:'PDS',label:'PDS',bg:'#6d28d9',fg:'#fff'},
+];
+let selSev=null,selCloudFeature=null,selDamageTag=null;
+let selChannel='all';
+
+function pickChannel(ch, btn){
+  selChannel=ch;
+  document.querySelectorAll('.chb').forEach(b=>b.classList.toggle('on', b.dataset.ch===ch));
+}
+
+// Tracks measured/estimated state per sub-field type
+const meState={snow:null,hail:null,wind:null};
+
+// Which severity IDs trigger which sub-field
+const SUB_FIELDS={SNOW:'snow-field',HAIL:'hail-field',WIND:'wind-field'};
+
+function showSubField(sevId){
+  // Hide all sub-fields first
+  ['snow-field','hail-field','wind-field'].forEach(id=>{
+    document.getElementById(id).style.display='none';
+  });
+  // Show the relevant one if any
+  if(SUB_FIELDS[sevId]){
+    document.getElementById(SUB_FIELDS[sevId]).style.display='block';
+  }
+}
+
+function setME(type,val){
+  meState[type]=val;
+  document.getElementById(type+'-measured').classList.toggle('on',val==='measured');
+  document.getElementById(type+'-estimated').classList.toggle('on',val==='estimated');
+}
+
+SEVS.forEach(s=>{
+  const b=document.createElement('button');
+  b.className='sb';b.type='button';b.textContent=s.label;b.dataset.id=s.id;
+  b.onclick=()=>{
+    if(selSev===s.id){selSev=null;b.classList.remove('on');b.style.cssText='';showSubField(null);return;}
+    selSev=s.id;
+    document.querySelectorAll('#sev-grid .sb').forEach(x=>{x.classList.remove('on');x.style.cssText='';});
+    b.classList.add('on');b.style.background=s.bg;b.style.color=s.fg;b.style.borderColor='transparent';
+    showSubField(s.id);
+  };
+  document.getElementById('sev-grid').appendChild(b);
+});
+
+CLOUD_FEATURES.forEach(s=>{
+  const b=document.createElement('button');
+  b.className='sb';b.type='button';b.textContent=s.label;b.dataset.id=s.id;
+  b.onclick=()=>{
+    if(selCloudFeature===s.id){selCloudFeature=null;b.classList.remove('on');b.style.cssText='';return;}
+    selCloudFeature=s.id;
+    document.querySelectorAll('#cloud-grid .sb').forEach(x=>{x.classList.remove('on');x.style.cssText='';});
+    b.classList.add('on');b.style.background=s.bg;b.style.color=s.fg;b.style.borderColor='transparent';
+  };
+  document.getElementById('cloud-grid').appendChild(b);
+});
+
+DAMAGE_TAGS.forEach(s=>{
+  const b=document.createElement('button');
+  b.className='sb';b.type='button';b.textContent=s.label;b.dataset.id=s.id;
+  b.onclick=()=>{
+    if(selDamageTag===s.id){selDamageTag=null;b.classList.remove('on');b.style.cssText='';return;}
+    selDamageTag=s.id;
+    document.querySelectorAll('#damage-grid .sb').forEach(x=>{x.classList.remove('on');x.style.cssText='';});
+    b.classList.add('on');b.style.background=s.bg;b.style.color=s.fg;b.style.borderColor='transparent';
+  };
+  document.getElementById('damage-grid').appendChild(b);
+});
+
+function getSubFieldNotes(){
+  const parts=[];
+  const snow=document.getElementById('isnow')?.value;
+  if(snow&&selSev==='SNOW'){
+    const me=meState.snow?` (${meState.snow})`:'';
+    parts.push(`Snow depth: ${snow} in${me}`);
+  }
+  const hail=document.getElementById('ihail')?.value;
+  if(hail&&selSev==='HAIL'){
+    const me=meState.hail?` (${meState.hail})`:'';
+    parts.push(`Hail size: ${hail} in${me}`);
+  }
+  const wind=document.getElementById('iwind')?.value;
+  if(wind&&selSev==='WIND'){
+    const me=meState.wind?` (${meState.wind})`:'';
+    parts.push(`Wind: ${wind} mph${me}`);
+  }
+  return parts.join(' · ');
+}
+
+// ── IMAGE COMPRESSION ─────────────────────────────────────────────
+// Compress client-side before upload — saves storage quota significantly
+// Resizes to max 1920px on longest edge and re-encodes as JPEG q0.82
+async function compressImage(file){
+  return new Promise(resolve=>{
+    const MAX=1920, Q=0.82;
+    const img=new window.Image();
+    const url=URL.createObjectURL(file);
+    img.onload=()=>{
+      URL.revokeObjectURL(url);
+      let{width:w,height:h}=img;
+      if(w<=MAX&&h<=MAX){resolve(file);return;}
+      if(w>h){h=Math.round(h*(MAX/w));w=MAX;}
+      else{w=Math.round(w*(MAX/h));h=MAX;}
+      const canvas=document.createElement('canvas');
+      canvas.width=w;canvas.height=h;
+      canvas.getContext('2d').drawImage(img,0,0,w,h);
+      canvas.toBlob(blob=>{
+        resolve(blob?new File([blob],'photo.jpg',{type:'image/jpeg'}):file);
+      },'image/jpeg',Q);
+    };
+    img.onerror=()=>{URL.revokeObjectURL(url);resolve(file);};
+    img.src=url;
+  });
+}
+
+const MIME_EXT={
+  'image/jpeg':'jpg','image/jpg':'jpg','image/png':'png',
+  'image/webp':'webp','image/gif':'gif','image/heic':'heic','image/heif':'heif'
+};
+let selFile=null;
+
+function onFile(e){setFile(e.target.files[0]);}
+function dzDrag(e,over){e.preventDefault();document.getElementById('dropzone').classList.toggle('drag',over);}
+function dzDrop(e){
+  e.preventDefault();
+  document.getElementById('dropzone').classList.remove('drag');
+  if(e.dataTransfer.files[0])setFile(e.dataTransfer.files[0]);
+}
+
+function setFile(f){
+  if(!f)return;
+  if(!MIME_EXT[f.type]){setStatus('Unsupported file type. Use JPG, PNG, HEIC or WEBP.','err');return;}
+  if(f.size>8*1024*1024){setStatus('Photo must be under 8MB.','err');return;}
+  selFile=f;
+  setStatus('','');
+  const reader=new FileReader();
+  reader.onload=ev=>{
+    const dz=document.getElementById('dropzone');
+    document.getElementById('preview').src=ev.target.result;
+    document.getElementById('preview').style.display='block';
+    document.getElementById('dz-icon').style.display='none';
+    document.getElementById('dz-label').style.display='none';
+    document.getElementById('dz-sub').style.display='none';
+    document.getElementById('dz-remove').style.display='block';
+    dz.classList.add('has');
+    dz.querySelector('input[type=file]').style.pointerEvents='none';
+  };
+  reader.readAsDataURL(f);
+  // Parse EXIF in parallel
+  readEXIF(f);
+}
+
+// ── EXIF ──────────────────────────────────────────────────────────
+let exifTime=null; // Date from EXIF, or null if none found
+
+async function readEXIF(f){
+  const strip=document.getElementById('exif-strip');
+  strip.innerHTML='';strip.style.display='none';
+  exifTime=null;
+
+  // exifr may not be available for all formats (PNG has no EXIF)
+  try{
+    const tags=await exifr.parse(f,['DateTimeOriginal','DateTime','CreateDate']);
+    const raw=tags?.DateTimeOriginal||tags?.CreateDate||tags?.DateTime;
+
+    if(raw){
+      exifTime=new Date(raw);
+      // Auto-fill the time field
+      const local=toDatetimeLocal(exifTime);
+      document.getElementById('itime').value=local;
+      checkTimeWindow();
+
+      const age=Date.now()-exifTime.getTime();
+      const within=age<=WINDOW_MS;
+      showExifStrip(
+        within?'found':'mismatch',
+        within?'✅':'🚫',
+        within
+          ?`EXIF metadata found — taken ${timeAgoMs(age)}. Time field auto-filled.`
+          :`EXIF metadata found — but this photo is ${timeAgoMs(age)} old and outside the 48-hour window.`
+      );
+      if(!within)setStatus('Photo metadata shows it was taken more than 48 hours ago.','err');
+    } else {
+      // File parsed but no datetime tag
+      showExifStrip('none','⚠','No date/time metadata found in this photo — time is self-reported by the uploader.');
+    }
+  }catch(e){
+    // exifr couldn't parse (PNG, WEBP, corrupt) — treat as no metadata
+    showExifStrip('none','⚠','No date/time metadata found in this photo — time is self-reported by the uploader.');
+  }
+}
+
+function showExifStrip(type,icon,msg){
+  const strip=document.getElementById('exif-strip');
+  strip.innerHTML=`<div class="exif-strip ${type}"><span class="exif-strip-icon">${icon}</span><span>${msg}</span></div>`;
+  strip.style.display='block';
+}
+
+function toDatetimeLocal(d){
+  // Returns "YYYY-MM-DDTHH:MM" in local time for datetime-local input
+  const pad=n=>String(n).padStart(2,'0');
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function timeAgoMs(ms){
+  const h=Math.floor(ms/3600000);
+  if(h<1)return`${Math.floor(ms/60000)}m ago`;
+  if(h<24)return`${h}h ago`;
+  return`${Math.floor(h/24)}d ago`;
+}
+
+function removePhoto(e){
+  e.stopPropagation();
+  selFile=null;exifTime=null;
+  const dz=document.getElementById('dropzone');
+  document.getElementById('preview').style.display='none';
+  document.getElementById('preview').src='';
+  document.getElementById('dz-icon').style.display='block';
+  document.getElementById('dz-label').style.display='block';
+  document.getElementById('dz-sub').style.display='block';
+  document.getElementById('dz-remove').style.display='none';
+  document.getElementById('phinput').value='';
+  document.getElementById('exif-strip').style.display='none';
+  document.getElementById('itime').value='';
+  document.getElementById('time-warning').style.display='none';
+  dz.classList.remove('has');
+  dz.querySelector('input[type=file]').style.pointerEvents='auto';
+  setStatus('','');
+}
+
+// ── CHAR COUNT ────────────────────────────────────────────────────
+function updateCount(){
+  document.getElementById('char-used').textContent=
+    document.getElementById('icaption').value.length;
+}
+
+// ── TIME VALIDATION ───────────────────────────────────────────────
+const WINDOW_MS=48*60*60*1000;
+
+document.getElementById('itime').addEventListener('change',()=>{
+  checkTimeWindow();
+  // If user manually changes the time after EXIF was found, check for mismatch
+  if(exifTime){
+    const manualVal=document.getElementById('itime').value;
+    if(manualVal){
+      const manual=new Date(manualVal).getTime();
+      const diff=Math.abs(manual-exifTime.getTime());
+      // More than 10 min difference — flag mismatch
+      if(diff>10*60*1000){
+        showExifStrip('mismatch','⚠',
+          `Entered time differs from photo metadata (${toDatetimeLocal(exifTime)}). Metadata time will be used for verification.`
+        );
+      } else {
+        // Back in sync
+        const age=Date.now()-exifTime.getTime();
+        showExifStrip('found','✅',`EXIF metadata found — taken ${timeAgoMs(age)}.`);
+      }
+    }
+  }
+});
+
+function checkTimeWindow(){
+  const val=document.getElementById('itime').value;
+  const warn=document.getElementById('time-warning');
+  if(!val){warn.style.display='none';return;}
+  const tooOld=(Date.now()-new Date(val).getTime())>WINDOW_MS;
+  warn.style.display=tooOld?'block':'none';
+}
+
+function getPhotoTime(){
+  const val=document.getElementById('itime').value;
+  if(!val)return null;
+  return new Date(val).toISOString();
+}
+
+// ── GPS ───────────────────────────────────────────────────────────
+let gpsCoords=null;
+function getGPS(){
+  if(!navigator.geolocation){setGPSLabel('GPS not available on this device','');return;}
+  setGPSLabel('Acquiring location…','');
+  document.getElementById('gps-btn').disabled=true;
+  navigator.geolocation.getCurrentPosition(
+    pos=>{
+      gpsCoords={lat:pos.coords.latitude,lng:pos.coords.longitude};
+      setGPSLabel(`${gpsCoords.lat.toFixed(5)}, ${gpsCoords.lng.toFixed(5)}`,'ok');
+      document.getElementById('gps-btn').textContent='✓ Got it';
+      document.getElementById('gps-btn').disabled=false;
+    },
+    ()=>{
+      setGPSLabel('Location unavailable','');
+      document.getElementById('gps-btn').disabled=false;
+    },
+    {timeout:10000,maximumAge:60000}
+  );
+}
+function setGPSLabel(txt,cls){
+  const el=document.getElementById('gps-label');
+  el.textContent=txt;el.className=cls?`ok`:'';
+}
+
+// ── STATUS / PROGRESS ─────────────────────────────────────────────
+function setStatus(msg,type){
+  const el=document.getElementById('status');
+  el.textContent=msg;
+  el.style.color=type==='err'?'#ef4444':type==='ok'?'#22c55e':'#7a91a8';
+}
+function setProgress(pct,label){
+  const wrap=document.getElementById('progwrap');
+  if(pct===null){wrap.style.display='none';return;}
+  wrap.style.display='flex';
+  document.getElementById('progfill').style.width=pct+'%';
+  if(label)document.getElementById('prog-label').textContent=label;
+}
+
+// ── IMAGE COMPRESSION ────────────────────────────────────────────
+// Resize to maxWidth before upload — reduces storage + bandwidth
+function compressImage(file, maxWidth, quality){
+  return new Promise(resolve=>{
+    const img=new window.Image();
+    const url=URL.createObjectURL(file);
+    img.onload=()=>{
+      URL.revokeObjectURL(url);
+      let w=img.width, h=img.height;
+      if(w>maxWidth){h=Math.round(h*maxWidth/w);w=maxWidth;}
+      const canvas=document.createElement('canvas');
+      canvas.width=w;canvas.height=h;
+      canvas.getContext('2d').drawImage(img,0,0,w,h);
+      canvas.toBlob(blob=>resolve(blob||file),'image/jpeg',quality);
+    };
+    img.onerror=()=>{URL.revokeObjectURL(url);resolve(file);};
+    img.src=url;
+  });
+}
+
+// ── SUBMIT ────────────────────────────────────────────────────────
+async function submitPhoto(){
+  const name=document.getElementById('iname').value.trim();
+  const caption=document.getElementById('icaption').value.trim();
+  if(!selFile){setStatus('Please select a photo first.','err');return;}
+  if(!name){setStatus('Please enter your name or handle.','err');return;}
+
+  // 48-hour window check — EXIF is authoritative, manual time is fallback
+  const checkTime = exifTime || (document.getElementById('itime').value ? new Date(document.getElementById('itime').value) : null);
+  if(checkTime){
+    if((Date.now()-checkTime.getTime())>WINDOW_MS){
+      setStatus(exifTime
+        ?'Photo metadata confirms this was taken more than 48 hours ago — cannot accept.'
+        :'Photo is outside the 48-hour window and cannot be accepted.','err');
+      return;
+    }
+  }
+
+  const btn=document.getElementById('submit-btn');
+  btn.disabled=true;setStatus('','');
+
+  try{
+    // Upload to Supabase Storage
+    setProgress(15,'Uploading photo…');
+    const ext=MIME_EXT[selFile.type]||'jpg';
+    const path=`${Date.now()}-${Math.random().toString(36).slice(2,7)}.${ext}`;
+    // Client-side compression before upload — max 1920px wide, quality 0.82
+    const compressedBlob = await compressImage(selFile, 1920, 0.82);
+    const{error:upErr}=await supa.storage.from('photos').upload(path,compressedBlob,{contentType:'image/jpeg',cacheControl:'3600'});
+    if(upErr)throw new Error('Upload failed — '+upErr.message);
+
+    setProgress(65,'Saving to feed…');
+    const{data:urlData}=supa.storage.from('photos').getPublicUrl(path);
+    const photoUrl=urlData.publicUrl;
+
+    // Build notes — include sub-field data and time provenance
+    const photoTime=getPhotoTime();
+    let timeStr='';
+    if(exifTime){
+      timeStr=` [Taken: ${exifTime.toLocaleString()} · verified by metadata]`;
+    } else if(photoTime){
+      timeStr=` [Taken: ${new Date(photoTime).toLocaleString()} · self-reported]`;
+    }
+    const subNotes=getSubFieldNotes();
+    const baseParts=[caption,subNotes].filter(Boolean).join(' · ');
+    const fullNotes=baseParts?(baseParts+timeStr):(timeStr.trim()||null);
+
+    // Insert report row — tagged as stormshots source for auto-cleanup
+    const expiresAt = new Date(Date.now() + 12 * 60 * 60 * 1000).toISOString();
+    const{error:dbErr}=await supa.from('reports').insert({
+      submitted_by:      name,
+      severity:          selSev||'OTHER',
+      notes:             fullNotes,
+      photo_url:         photoUrl,
+      lat:               gpsCoords?.lat??null,
+      lng:               gpsCoords?.lng??null,
+      damage_track:      null,
+      source:            'stormshots',
+      expires_at:        expiresAt,
+      intended_channel:  selChannel==='all'?null:selChannel,
+      cloud_feature:     selCloudFeature||null,
+      damage_tag:        selDamageTag||null,
+    });
+    if(dbErr)throw new Error('Save failed — '+dbErr.message);
+
+    setProgress(100,'Done!');
+    setTimeout(()=>{setProgress(null);showSuccess();},400);
+
+  }catch(e){
+    console.error('[SS]',e.message?.slice(0,60)||'ERR');
+    setStatus(e.message||'Something went wrong. Please try again.','err');
+    setProgress(null);
+    btn.disabled=false;
+  }
+}
+
+// ── SUCCESS / RESET ───────────────────────────────────────────────
+function showSuccess(){
+  document.getElementById('form-card').style.display='none';
+  document.getElementById('success-card').classList.add('show');
+  window.scrollTo({top:0,behavior:'smooth'});
+}
+function resetForm(){
+  removePhoto(new Event('x'));
+  document.getElementById('iname').value='';
+  document.getElementById('icaption').value='';
+  updateCount();
+  selSev=null;gpsCoords=null;exifTime=null;selChannel='all';
+  selCloudFeature=null;selDamageTag=null;
+  document.querySelectorAll('.chb').forEach(b=>b.classList.toggle('on',b.dataset.ch==='all'));
+  ['cloud-grid','damage-grid','sev-grid'].forEach(id=>{
+    document.querySelectorAll(`#${id} .sb`).forEach(b=>{b.classList.remove('on');b.style.cssText='';});
+  });
+  // Reset sub-fields
+  ['snow','hail','wind'].forEach(t=>{
+    const el=document.getElementById(`i${t}`);
+    if(el)el.value='';
+    meState[t]=null;
+    const mEl=document.getElementById(`${t}-measured`);
+    const eEl=document.getElementById(`${t}-estimated`);
+    if(mEl)mEl.classList.remove('on');
+    if(eEl)eEl.classList.remove('on');
+  });
+  showSubField(null);
+  document.getElementById('itime').value='';
+  document.getElementById('time-warning').style.display='none';
+  document.querySelectorAll('.sb').forEach(b=>{b.classList.remove('on');b.style.cssText='';});
+  setGPSLabel('No location attached','');
+  document.getElementById('gps-btn').textContent='Use my location';
+  document.getElementById('gps-btn').disabled=false;
+  setStatus('','');
+  document.getElementById('submit-btn').disabled=false;
+  document.getElementById('form-card').style.display='flex';
+  document.getElementById('success-card').classList.remove('show');
+  window.scrollTo({top:0,behavior:'smooth'});
+}
+
+// ── PARTICIPATING CREATORS ────────────────────────────────────────
+function toggleCreators(){
+  const drawer=document.getElementById('creators-drawer');
+  const overlay=document.getElementById('creators-overlay');
+  const open=drawer.classList.toggle('show');
+  overlay.classList.toggle('show',open);
+  document.body.style.overflow=open?'hidden':'';
+}
+</script>
+</body>
+</html>
