@@ -6,7 +6,7 @@ Three standalone HTML files — no build step, no framework, no server required.
 Built by CasonWX. Open-sourced for the weather community.
 
 ---
-
+Disclaimer: This project was ai generated and may come with mistakes 
 ## What's included
 
 | File | Purpose |
